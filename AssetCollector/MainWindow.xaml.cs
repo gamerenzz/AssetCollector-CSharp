@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 using Microsoft.Win32;
 using ClosedXML.Excel;
 using System.IO;
+using System.Drawing; // 引入托盘图标所需的绘图库
 
 namespace AssetCollector
 {
@@ -16,20 +17,162 @@ namespace AssetCollector
     {
         private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private List<ResultItem> currentResults = new List<ResultItem>();
-        // 【新增】保存扫描到的软件列表
         private List<SoftwareItem> currentSoftwareResults = new List<SoftwareItem>();
         
         private readonly string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
         private bool isLoaded = false;
         private readonly Dictionary<string, string> customFields = new Dictionary<string, string>();
 
-        public MainWindow()
+        // 【新增】托盘与安全控制变量
+        private System.Windows.Forms.NotifyIcon trayIcon;
+        private bool isForceExit = false; // 是否通过了密码验证，允许真正退出
+        private const string ExitPasswordHash = "admin123"; // 默认安全退出密码
+
+        // 构造函数，支持接收“是否默认隐藏”参数
+        public MainWindow(bool startMinimized)
         {
             InitializeComponent();
+            InitializeTrayIcon(); // 初始化系统托盘
             LoadConfig(); 
             isLoaded = true;
+
+            // 如果是开机自启参数运行，立刻隐藏到托盘
+            if (startMinimized)
+            {
+                this.WindowState = WindowState.Minimized;
+                this.Hide();
+                this.ShowInTaskbar = false;
+            }
+            
+            CheckAutoStartStatus(); // 刷新开机自启复选框状态
         }
 
+        // ========== UX Polish: 初始化系统托盘 ==========
+        private void InitializeTrayIcon()
+        {
+            trayIcon = new System.Windows.Forms.NotifyIcon();
+            // 直接获取 Windows 默认的系统图标，无需外挂图标文件，防止打包丢失
+            trayIcon.Icon = SystemIcons.Shield; 
+            trayIcon.Text = "终端资产管理平台";
+            trayIcon.Visible = true;
+
+            // 托盘双击事件 -> 恢复并激活窗口
+            trayIcon.DoubleClick += (s, e) => RestoreWindow();
+
+            // 创建托盘右键菜单
+            var contextMenu = new System.Windows.Forms.ContextMenu();
+            contextMenu.MenuItems.Add("打开主界面", (s, e) => RestoreWindow());
+            contextMenu.MenuItems.Add("安全退出", (s, e) => TriggerExitWithPassword());
+            trayIcon.ContextMenu = contextMenu;
+        }
+
+        private void RestoreWindow()
+        {
+            this.Show();
+            this.WindowState = WindowState.Normal;
+            this.ShowInTaskbar = true;
+            this.Activate();
+        }
+
+        // 主窗口最小化时，自动缩到托盘并隐藏任务栏图标
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            if (this.WindowState == WindowState.Minimized)
+            {
+                this.Hide();
+                this.ShowInTaskbar = false;
+            }
+        }
+
+        // ========== 安全防护：拦截关闭事件并校验密码 ==========
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (!isForceExit)
+            {
+                // 如果没有输入正确密码，拦截退出事件，展示密码验证遮罩
+                e.Cancel = true;
+                TriggerExitWithPassword();
+            }
+        }
+
+        private void TriggerExitWithPassword()
+        {
+            RestoreWindow(); // 确保窗口拉回前台可见
+            PasswordOverlay.Visibility = Visibility.Visible;
+            TxtExitPassword.Focus();
+        }
+
+        private void BtnConfirmExit_Click(object sender, RoutedEventArgs e)
+        {
+            if (TxtExitPassword.Password == ExitPasswordHash)
+            {
+                // 密码正确，解除关闭拦截锁，彻底退出
+                isForceExit = true;
+                if (trayIcon != null)
+                {
+                    trayIcon.Visible = false;
+                    trayIcon.Dispose();
+                }
+                SaveConfig();
+                Application.Current.Shutdown();
+            }
+            else
+            {
+                MessageBox.Show("验证密码错误！无法关闭客户端。", "安全验证失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                TxtExitPassword.Clear();
+            }
+        }
+
+        private void BtnCancelExit_Click(object sender, RoutedEventArgs e)
+        {
+            PasswordOverlay.Visibility = Visibility.Collapsed;
+            TxtExitPassword.Clear();
+        }
+
+        // ========== 自动自启写入 Windows 注册表 ==========
+        private void CheckAutoStartStatus()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false))
+                {
+                    if (key != null)
+                    {
+                        object val = key.GetValue("TerminalAssetCollector");
+                        ChkAutoStart.IsChecked = (val != null);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void ChkAutoStart_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    // 开机启动时传入 -startup 参数，实现默认隐藏在右下角
+                    key.SetValue("TerminalAssetCollector", $"\"{exePath}\" -startup");
+                }
+            }
+            catch { }
+        }
+
+        private void ChkAutoStart_Unchecked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    key.DeleteValue("TerminalAssetCollector", false);
+                }
+            }
+            catch { }
+        }
+
+        // ========== 本地配置与状态维护 ==========
         private void LoadConfig()
         {
             try
@@ -92,12 +235,7 @@ namespace AssetCollector
             if (TxtBuilding == null || TxtFloor == null || TxtDept == null || TxtAssetType == null || BtnScan == null || BtnScanSoftware == null) return;
             bool enable = (!string.IsNullOrWhiteSpace(TxtBuilding.Text) && !string.IsNullOrWhiteSpace(TxtFloor.Text) && !string.IsNullOrWhiteSpace(TxtDept.Text) && !string.IsNullOrWhiteSpace(TxtAssetType.Text));
             BtnScan.IsEnabled = enable;
-            BtnScanSoftware.IsEnabled = enable; // 同步控制软件扫描按钮
-            SaveConfig();
-        }
-
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-        {
+            BtnScanSoftware.IsEnabled = enable;
             SaveConfig();
         }
 
@@ -167,7 +305,7 @@ namespace AssetCollector
             BtnScan.Content = "正在扫描...";
             ProgBar.Visibility = Visibility.Visible; ProgBar.Value = 0;
 
-            TabResultContainer.SelectedItem = TabHardware; // 自动切到硬件标签
+            TabResultContainer.SelectedItem = TabHardware;
 
             currentResults = await Task.Run(() => PerformScanHardware());
             GridResults.ItemsSource = currentResults;
@@ -212,7 +350,7 @@ namespace AssetCollector
             BtnScanSoftware.Content = "正在扫描...";
             ProgBar.Visibility = Visibility.Visible; ProgBar.Value = 0;
 
-            TabResultContainer.SelectedItem = TabSoftware; // 自动切到软件清单标签
+            TabResultContainer.SelectedItem = TabSoftware;
 
             UpdateProgress(30, "正在连接并解析系统注册表...");
             currentSoftwareResults = await Task.Run(() => HardwareCollector.GetInstalledSoftwareList());
@@ -259,7 +397,6 @@ namespace AssetCollector
             foreach (var kv in customFields) payload[kv.Key] = kv.Value;
             foreach (var item in currentResults) payload[item.Key] = item.Value;
             
-            // 完美打包结构化软件列表上传
             if (currentSoftwareResults != null && currentSoftwareResults.Count > 0)
             {
                 payload["software_list"] = currentSoftwareResults;
@@ -282,7 +419,7 @@ namespace AssetCollector
 
                 if (response.IsSuccessStatusCode)
                 {
-                    MessageBox.Show("资产数据（含硬件和软件清单）已成功上传！\n服务器响应: " + resBody, "上传成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("资产数据已成功上传！\n服务器响应: " + resBody, "上传成功", MessageBoxButton.OK, MessageBoxImage.Information);
                     TxtStatus.Text = "上传成功";
                 }
                 else
@@ -299,7 +436,6 @@ namespace AssetCollector
             finally { BtnUpload.Content = "上传至服务器"; BtnUpload.IsEnabled = true; }
         }
 
-        // ========== 【双 Sheet 级重构】导出双工作表 Excel ==========
         private async void BtnExport_Click(object sender, RoutedEventArgs e)
         {
             var payload = BuildPayload();
@@ -315,19 +451,16 @@ namespace AssetCollector
                     {
                         using (var workbook = new XLWorkbook())
                         {
-                            // 工作表一：硬件与基本配置信息
                             var wsHardware = workbook.Worksheets.Add("硬件信息");
                             int col = 1;
-                            // 写表头
                             foreach (var key in payload.Keys)
                             {
-                                if (key == "software_list") continue; // 软件不在这里写
+                                if (key == "software_list") continue;
                                 wsHardware.Cell(1, col).Value = key;
                                 wsHardware.Cell(1, col).Style.Font.Bold = true;
                                 wsHardware.Cell(1, col).Style.Fill.BackgroundColor = XLColor.LightGray;
                                 col++;
                             }
-                            // 写内容
                             col = 1;
                             foreach (var kv in payload)
                             {
@@ -337,11 +470,9 @@ namespace AssetCollector
                             }
                             wsHardware.Columns().AdjustToContents();
 
-                            // 工作表二：精致漂亮的已安装软件账册
                             if (currentSoftwareResults != null && currentSoftwareResults.Count > 0)
                             {
                                 var wsSoftware = workbook.Worksheets.Add("软件清单");
-                                // 表头
                                 string[] headers = { "软件名称", "版本号", "安装日期" };
                                 for (int i = 0; i < headers.Length; i++)
                                 {
@@ -350,7 +481,6 @@ namespace AssetCollector
                                     wsSoftware.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightSlateGray;
                                     wsSoftware.Cell(1, i + 1).Style.Font.FontColor = XLColor.White;
                                 }
-                                // 数据行
                                 int rowIdx = 2;
                                 foreach (var sw in currentSoftwareResults)
                                 {
@@ -365,7 +495,7 @@ namespace AssetCollector
                             workbook.SaveAs(saveFileDialog.FileName);
                         }
                     });
-                    MessageBox.Show("资产账册已成功导出为多 Sheet Excel 文件！", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("资产账册已成功导出！", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
@@ -375,20 +505,18 @@ namespace AssetCollector
             }
         }
 
-        // 帮助弹窗 (UX Polish)
         private void BtnHelp_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show(
                 "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
                 "开发人员：Tonekey2016\n\n" +
-                "功能特点：\n" +
-                "1. 高速异步扫描，杜绝界面卡顿假死。\n" +
-                "2. 深度检索注册表，完整获取全机安装软件名录。\n" +
-                "3. 完美适配有线/无线双物理网卡，自动过滤虚拟机及虚拟显卡。\n" +
-                "4. 支持动态增删自定义盘点参数，随存随导。\n" +
-                "5. 自动记录配置与窗口大小、位置尺寸（启动时自动还原）。\n" +
-                "6. 【创新】支持导出多Sheet Excel账簿（硬件页、软件清单页分离）。",
-                "帮助说明 / 关于软件", MessageBoxButton.OK, MessageBoxImage.Information);
+                "安全防护与控制说明：\n" +
+                "1. 单实例防护：系统仅允许运行一个客户端。双击新程序会自动唤醒现有进程并拉回前台置顶。\n" +
+                "2. 托盘最小化：程序默认启动或点击最小化时将完全缩入右下角托盘盾牌图标中。\n" +
+                "3. 密码防退出：拦截所有常规关闭、Alt+F4。退出必须通过托盘右键/窗口关闭弹出遮罩校验密码(默认：admin123)。\n" +
+                "4. 智能开机启动：勾选开机启动写入注册表，随Windows自动隐式后台启动(-startup)，对终端用户静默无感。\n" +
+                "5. 极致体验：支持自动记忆窗口的大小与显示位置；支持导出硬件、软件分立的专业级多Sheet Excel表格。",
+                "帮助说明 / 安全与托盘控制", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 

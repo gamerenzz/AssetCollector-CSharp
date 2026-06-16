@@ -16,6 +16,12 @@ namespace AssetCollector
         // 文本框内容改变时，检查是否填写完整，完整才启用“扫描”按钮
         private void Input_TextChanged(object sender, TextChangedEventArgs e)
         {
+            // 【关键修复】防止在初始化界面时触发事件，导致拿到还未创建(null)的控件引发静默崩溃
+            if (TxtBuilding == null || TxtFloor == null || TxtDept == null || TxtAssetType == null || BtnScan == null)
+            {
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(TxtBuilding.Text) &&
                 !string.IsNullOrWhiteSpace(TxtFloor.Text) &&
                 !string.IsNullOrWhiteSpace(TxtDept.Text) &&
@@ -64,7 +70,6 @@ namespace AssetCollector
         {
             var list = new List<ResultItem>();
 
-            // 这里使用 Dispatcher.Invoke 是为了在后台线程安全地更新前台 UI 的进度文字
             UpdateProgress(10, "正在采集系统信息...");
             list.Add(new ResultItem { Key = "计算机名称", Value = Environment.MachineName });
             list.Add(new ResultItem { Key = "用户名", Value = Environment.UserName });

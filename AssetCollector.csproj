@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net47</TargetFramework>
+    <UseWPF>true</UseWPF> <!-- 启用 WPF 界面框架 -->
+    <AssemblyName>终端资产管理平台</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 引入 JSON 处理库 -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 引入 Windows WMI 管理库 -->
+    <Reference Include="System.Management" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

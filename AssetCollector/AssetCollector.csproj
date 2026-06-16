@@ -8,15 +8,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 处理 JSON -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- 处理 Excel 导出 -->
     <PackageReference Include="ClosedXML" Version="0.102.2" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Management" />
     <Reference Include="System.Net.Http" />
+    <!-- 新增：系统绘图与托盘所需的 Windows 窗体支持 -->
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 
 </Project>

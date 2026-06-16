@@ -1,0 +1,30 @@
+name: Build C# WPF App (.NET 4.7)
+
+on:
+  workflow_dispatch: # 允许在 GitHub 网页上手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: windows-latest # 必须使用 Windows 环境编译 WPF
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x' # SDK 版本，它兼容编译 net47
+
+    - name: Restore Dependencies
+      run: dotnet restore AssetCollector/AssetCollector.csproj
+
+    - name: Build Application
+      run: dotnet build AssetCollector/AssetCollector.csproj -c Release --no-restore
+
+    - name: Publish Artifact (Upload Exe)
+      uses: actions/upload-artifact@v4
+      with:
+        name: AssetCollector-Release
+        # 提取编译好的 exe 及依赖项
+        path: AssetCollector/bin/Release/net47/

@@ -3,14 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="终端资产管理平台-客户端 v2.0" Height="650" Width="950"
         WindowStartupLocation="CenterScreen" Background="#F5F5F5" FontFamily="Microsoft YaHei"
-        Closing="Window_Closing"> <!-- 绑定关闭事件，用于记忆窗口尺寸 -->
+        Closing="Window_Closing">
     <Grid Margin="15">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- 顶部工具栏（帮助） -->
+            <RowDefinition Height="Auto"/> <!-- 顶部工具栏 -->
             <RowDefinition Height="Auto"/> <!-- 服务器配置 -->
             <RowDefinition Height="Auto"/> <!-- 位置信息 -->
             <RowDefinition Height="Auto"/> <!-- 操作按钮 -->
-            <RowDefinition Height="*"/>    <!-- 数据表格 -->
+            <RowDefinition Height="*"/>    <!-- Tab标签页（数据表格） -->
             <RowDefinition Height="Auto"/> <!-- 底部进度条 -->
         </Grid.RowDefinitions>
 
@@ -31,7 +31,6 @@
         <!-- 2. 位置信息 -->
         <GroupBox Grid.Row="2" Header="位置信息" Margin="0,0,0,10" Padding="10,10">
             <StackPanel>
-                <!-- 标准字段 -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                     <Label Content="楼号:" Width="60" VerticalAlignment="Center"/>
                     <TextBox x:Name="TxtBuilding" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
@@ -43,36 +42,44 @@
                     <TextBox x:Name="TxtAssetType" Text="计算机" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
                 </StackPanel>
 
-                <!-- 【新增】动态自定义字段容器，支持换行 -->
                 <WrapPanel x:Name="CustomFieldsContainer" Orientation="Horizontal" Margin="0,5,0,5"/>
 
-                <!-- 操作：新增自定义字段 -->
                 <Button x:Name="BtnAddField" Content="+ 新增自定义字段" Width="130" Height="25" HorizontalAlignment="Left" Margin="5,5,0,0" Click="BtnAddField_Click" Background="#E1E1E1" BorderThickness="0"/>
             </StackPanel>
         </GroupBox>
 
         <!-- 3. 操作按钮 -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,10">
-            <Button x:Name="BtnScan" Content="扫描硬件信息" Width="140" Height="35" Margin="0,0,20,0" Click="BtnScan_Click" Background="#0078D7" Foreground="White" BorderThickness="0" IsEnabled="False"/>
+            <Button x:Name="BtnScan" Content="扫描硬件信息" Width="140" Height="35" Margin="0,0,10,0" Click="BtnScan_Click" Background="#0078D7" Foreground="White" BorderThickness="0" IsEnabled="False"/>
+            <!-- 新增：扫描软件信息按钮 (绿色) -->
+            <Button x:Name="BtnScanSoftware" Content="扫描软件信息" Width="140" Height="35" Margin="0,0,20,0" Click="BtnScanSoftware_Click" Background="#28A745" Foreground="White" BorderThickness="0" IsEnabled="False"/>
             <Button x:Name="BtnUpload" Content="上传至服务器" Width="140" Height="35" Margin="0,0,20,0" Click="BtnUpload_Click" IsEnabled="False"/>
             <Button x:Name="BtnExport" Content="导出数据 (Excel)" Width="140" Height="35" Click="BtnExport_Click" IsEnabled="False"/>
         </StackPanel>
 
-        <!-- 4. 采集结果表格 -->
-        <GroupBox Grid.Row="4" Header="采集结果" Margin="0,0,0,10">
-            <DataGrid x:Name="GridResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="项目" Binding="{Binding Key}" Width="150" FontWeight="Bold"/>
-                    <DataGridTextColumn Header="内容" Binding="{Binding Value}" Width="*">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="TextWrapping" Value="Wrap"/> <!-- 允许单元格内文字自动换行（对展示长软件列表非常有用） -->
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
-                    </DataGridTextColumn>
-                </DataGrid.Columns>
-            </DataGrid>
-        </GroupBox>
+        <!-- 4. 双 Tab 标签页数据展示区域 -->
+        <TabControl x:Name="TabResultContainer" Grid.Row="4" Margin="0,0,0,10" Background="White">
+            <!-- 标签页一：硬件信息表 -->
+            <TabItem x:Name="TabHardware" Header="  硬件信息  " FontSize="13" Height="28">
+                <DataGrid x:Name="GridResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="项目" Binding="{Binding Key}" Width="150" FontWeight="Bold"/>
+                        <DataGridTextColumn Header="内容" Binding="{Binding Value}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            
+            <!-- 标签页二：安装软件清单表 -->
+            <TabItem x:Name="TabSoftware" Header="  软件清单  " FontSize="13" Height="28">
+                <DataGrid x:Name="GridSoftwareResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="软件名称" Binding="{Binding Name}" Width="*" FontWeight="Bold"/>
+                        <DataGridTextColumn Header="版本号" Binding="{Binding Version}" Width="200"/>
+                        <DataGridTextColumn Header="安装日期" Binding="{Binding InstallDate}" Width="150"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
 
         <!-- 5. 底部进度状态 -->
         <Grid Grid.Row="5" Margin="0,5,0,0">

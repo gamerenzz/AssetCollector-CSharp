@@ -3,6 +3,7 @@ using System.Management;
 using System.Net.NetworkInformation;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Win32;
 
 namespace AssetCollector
 {
@@ -87,42 +88,23 @@ namespace AssetCollector
             return (macList.Count > 0 ? string.Join(" | ", macList) : "Unknown", ipList.Count > 0 ? string.Join(" | ", ipList) : "Unknown");
         }
 
-        // 【新增】获取整机品牌与型号 (如: Dell OptiPlex 7090)
         public static string GetSystemModel()
         {
-            try
-            {
-                using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"))
-                {
-                    foreach (var item in searcher.Get())
-                    {
-                        return $"{item["Manufacturer"]} {item["Model"]}".Trim();
-                    }
-                }
-            }
-            catch { }
-            return "Unknown Model";
+            try { using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem")) { foreach (var i in s.Get()) return $"{i["Manufacturer"]} {i["Model"]}".Trim(); } } catch { } return "Unknown Model";
         }
 
-        // 【新增】获取外接显示器信息 (名称与序列号)
         public static string GetMonitorInfo()
         {
             List<string> monitors = new List<string>();
             try
             {
-                // WMI 中的显示器数据在 root\wmi 命名空间下
                 using (var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT UserFriendlyName, SerialNumberID FROM WmiMonitorID"))
                 {
                     foreach (var item in searcher.Get())
                     {
-                        // 显示器名字和序列号是以 UInt16 数组存储的 ASCII 码，需要解码
                         string name = DecodeWmiCharArray(item["UserFriendlyName"] as ushort[]);
                         string serial = DecodeWmiCharArray(item["SerialNumberID"] as ushort[]);
-                        
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            monitors.Add($"{name} (SN: {serial})");
-                        }
+                        if (!string.IsNullOrEmpty(name)) monitors.Add($"{name} (SN: {serial})");
                     }
                 }
                 return monitors.Count > 0 ? string.Join(" | ", monitors) : "未检测到外接显示器";
@@ -131,16 +113,81 @@ namespace AssetCollector
             return "获取显示器信息失败";
         }
 
-        // 帮助方法：解码 WMI 中的 UInt16 字符数组
         private static string DecodeWmiCharArray(ushort[] array)
         {
             if (array == null) return "";
             string result = "";
-            foreach (var c in array)
-            {
-                if (c > 0) result += (char)c;
-            }
+            foreach (var c in array) { if (c > 0) result += (char)c; }
             return result.Trim();
+        }
+
+        // 【新增】扫描全机所有已安装的软件 (从注册表读取)
+        public static string GetInstalledSoftware()
+        {
+            var softwareList = new List<string>();
+            string[] registryPaths = {
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall" // 32位软件在64位系统上的路径
+            };
+
+            try
+            {
+                // 1. 读取 LocalMachine 注册表 (所有用户安装的)
+                using (var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                {
+                    foreach (var path in registryPaths)
+                    {
+                        using (var key = localMachine.OpenSubKey(path))
+                        {
+                            if (key == null) continue;
+                            foreach (var subkeyName in key.GetSubKeyNames())
+                            {
+                                using (var subkey = key.OpenSubKey(subkeyName))
+                                {
+                                    if (subkey == null) continue;
+                                    string displayName = subkey.GetValue("DisplayName")?.ToString()?.Trim();
+                                    string systemComponent = subkey.GetValue("SystemComponent")?.ToString();
+                                    string parentKeyName = subkey.GetValue("ParentKeyName")?.ToString();
+
+                                    // 排除掉补丁、系统更新等非独立应用
+                                    if (!string.IsNullOrEmpty(displayName) && systemComponent != "1" && string.IsNullOrEmpty(parentKeyName))
+                                    {
+                                        softwareList.Add(displayName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. 读取 CurrentUser 注册表 (当前用户安装的)
+                using (var currentUser = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64))
+                {
+                    using (var key = currentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"))
+                    {
+                        if (key != null)
+                        {
+                            foreach (var subkeyName in key.GetSubKeyNames())
+                            {
+                                using (var subkey = key.OpenSubKey(subkeyName))
+                                {
+                                    if (subkey == null) continue;
+                                    string displayName = subkey.GetValue("DisplayName")?.ToString()?.Trim();
+                                    if (!string.IsNullOrEmpty(displayName))
+                                    {
+                                        softwareList.Add(displayName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 去除重复、按字母排序并拼接成单行文本
+            var sortedList = softwareList.Distinct().OrderBy(s => s).ToList();
+            return sortedList.Count > 0 ? string.Join(" | ", sortedList) : "未检测到安装的第三方软件";
         }
     }
 }

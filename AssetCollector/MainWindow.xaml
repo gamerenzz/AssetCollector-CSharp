@@ -3,92 +3,121 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="终端资产管理平台-客户端 v2.0" Height="650" Width="950"
         WindowStartupLocation="CenterScreen" Background="#F5F5F5" FontFamily="Microsoft YaHei"
-        Closing="Window_Closing">
-    <Grid Margin="15">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- 顶部工具栏 -->
-            <RowDefinition Height="Auto"/> <!-- 服务器配置 -->
-            <RowDefinition Height="Auto"/> <!-- 位置信息 -->
-            <RowDefinition Height="Auto"/> <!-- 操作按钮 -->
-            <RowDefinition Height="*"/>    <!-- Tab标签页（数据表格） -->
-            <RowDefinition Height="Auto"/> <!-- 底部进度条 -->
-        </Grid.RowDefinitions>
+        Closing="Window_Closing" StateChanged="Window_StateChanged">
+    <Grid>
+        <!-- 主界面容器 -->
+        <Grid x:Name="MainGrid" Margin="15">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- 顶部工具栏 -->
+                <RowDefinition Height="Auto"/> <!-- 服务器配置 -->
+                <RowDefinition Height="Auto"/> <!-- 位置信息 -->
+                <RowDefinition Height="Auto"/> <!-- 操作按钮 -->
+                <RowDefinition Height="*"/>    <!-- 数据表格 -->
+                <RowDefinition Height="Auto"/> <!-- 底部进度条 -->
+            </Grid.RowDefinitions>
 
-        <!-- 0. 顶部工具栏 -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,5">
-            <TextBlock Text="终端资产管理" FontSize="16" FontWeight="Bold" Foreground="#333333" VerticalAlignment="Center"/>
-            <Button Content="帮助 / 关于" Width="90" Height="25" HorizontalAlignment="Right" Click="BtnHelp_Click" Background="#E1E1E1" BorderThickness="0"/>
-        </DockPanel>
-
-        <!-- 1. 服务器配置 -->
-        <GroupBox Grid.Row="1" Header="服务器配置" Margin="0,0,0,10" Padding="10,5">
-            <StackPanel Orientation="Horizontal">
-                <Label Content="服务器地址:" FontWeight="Bold" VerticalAlignment="Center"/>
-                <TextBox x:Name="TxtServerUrl" Text="https://localhost:51710" Width="300" Margin="10,0,0,0" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
-            </StackPanel>
-        </GroupBox>
-
-        <!-- 2. 位置信息 -->
-        <GroupBox Grid.Row="2" Header="位置信息" Margin="0,0,0,10" Padding="10,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                    <Label Content="楼号:" Width="60" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TxtBuilding" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
-                    <Label Content="楼层:" Width="60" Margin="15,0,0,0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TxtFloor" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
-                    <Label Content="科室:" Width="60" Margin="15,0,0,0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TxtDept" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
-                    <Label Content="资产类型:" Width="65" Margin="15,0,0,0" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TxtAssetType" Text="计算机" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+            <!-- 0. 顶部工具栏 -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,5">
+                <TextBlock Text="终端资产管理" FontSize="16" FontWeight="Bold" Foreground="#333333" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- 开机自启复选框 -->
+                    <CheckBox x:Name="ChkAutoStart" Content="开机自启" Margin="0,0,15,0" VerticalAlignment="Center" Checked="ChkAutoStart_Checked" Unchecked="ChkAutoStart_Unchecked"/>
+                    <Button Content="帮助 / 关于" Width="90" Height="25" Click="BtnHelp_Click" Background="#E1E1E1" BorderThickness="0"/>
                 </StackPanel>
+            </DockPanel>
 
-                <WrapPanel x:Name="CustomFieldsContainer" Orientation="Horizontal" Margin="0,5,0,5"/>
+            <!-- 1. 服务器配置 -->
+            <GroupBox Grid.Row="1" Header="服务器配置" Margin="0,0,0,10" Padding="10,5">
+                <StackPanel Orientation="Horizontal">
+                    <Label Content="服务器地址:" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtServerUrl" Text="https://localhost:51710" Width="300" Margin="10,0,0,0" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                </StackPanel>
+            </GroupBox>
 
-                <Button x:Name="BtnAddField" Content="+ 新增自定义字段" Width="130" Height="25" HorizontalAlignment="Left" Margin="5,5,0,0" Click="BtnAddField_Click" Background="#E1E1E1" BorderThickness="0"/>
+            <!-- 2. 位置信息 -->
+            <GroupBox Grid.Row="2" Header="位置信息" Margin="0,0,0,10" Padding="10,10">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Label Content="楼号:" Width="60" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TxtBuilding" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                        <Label Content="楼层:" Width="60" Margin="15,0,0,0" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TxtFloor" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                        <Label Content="科室:" Width="60" Margin="15,0,0,0" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TxtDept" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                        <Label Content="资产类型:" Width="65" Margin="15,0,0,0" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TxtAssetType" Text="计算机" Width="120" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                    </StackPanel>
+
+                    <WrapPanel x:Name="CustomFieldsContainer" Orientation="Horizontal" Margin="0,5,0,5"/>
+
+                    <Button x:Name="BtnAddField" Content="+ 新增自定义字段" Width="130" Height="25" HorizontalAlignment="Left" Margin="5,5,0,0" Click="BtnAddField_Click" Background="#E1E1E1" BorderThickness="0"/>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- 3. 操作按钮 -->
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,10">
+                <Button x:Name="BtnScan" Content="扫描硬件信息" Width="140" Height="35" Margin="0,0,10,0" Click="BtnScan_Click" Background="#0078D7" Foreground="White" BorderThickness="0" IsEnabled="False"/>
+                <Button x:Name="BtnScanSoftware" Content="扫描软件信息" Width="140" Height="35" Margin="0,0,20,0" Click="BtnScanSoftware_Click" Background="#28A745" Foreground="White" BorderThickness="0" IsEnabled="False"/>
+                <Button x:Name="BtnUpload" Content="上传至服务器" Width="140" Height="35" Margin="0,0,20,0" Click="BtnUpload_Click" IsEnabled="False"/>
+                <Button x:Name="BtnExport" Content="导出数据 (Excel)" Width="140" Height="35" Click="BtnExport_Click" IsEnabled="False"/>
             </StackPanel>
-        </GroupBox>
 
-        <!-- 3. 操作按钮 -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,10">
-            <Button x:Name="BtnScan" Content="扫描硬件信息" Width="140" Height="35" Margin="0,0,10,0" Click="BtnScan_Click" Background="#0078D7" Foreground="White" BorderThickness="0" IsEnabled="False"/>
-            <!-- 新增：扫描软件信息按钮 (绿色) -->
-            <Button x:Name="BtnScanSoftware" Content="扫描软件信息" Width="140" Height="35" Margin="0,0,20,0" Click="BtnScanSoftware_Click" Background="#28A745" Foreground="White" BorderThickness="0" IsEnabled="False"/>
-            <Button x:Name="BtnUpload" Content="上传至服务器" Width="140" Height="35" Margin="0,0,20,0" Click="BtnUpload_Click" IsEnabled="False"/>
-            <Button x:Name="BtnExport" Content="导出数据 (Excel)" Width="140" Height="35" Click="BtnExport_Click" IsEnabled="False"/>
-        </StackPanel>
+            <!-- 4. Tab 标签页数据展示区域 -->
+            <TabControl x:Name="TabResultContainer" Grid.Row="4" Margin="0,0,0,10" Background="White">
+                <TabItem x:Name="TabHardware" Header="  硬件信息  " FontSize="13" Height="28">
+                    <DataGrid x:Name="GridResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="项目" Binding="{Binding Key}" Width="150" FontWeight="Bold"/>
+                            <DataGridTextColumn Header="内容" Binding="{Binding Value}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+                
+                <TabItem x:Name="TabSoftware" Header="  软件清单  " FontSize="13" Height="28">
+                    <DataGrid x:Name="GridSoftwareResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="软件名称" Binding="{Binding Name}" Width="*" FontWeight="Bold"/>
+                            <DataGridTextColumn Header="版本号" Binding="{Binding Version}" Width="200"/>
+                            <DataGridTextColumn Header="安装日期" Binding="{Binding InstallDate}" Width="150"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+            </TabControl>
 
-        <!-- 4. 双 Tab 标签页数据展示区域 -->
-        <TabControl x:Name="TabResultContainer" Grid.Row="4" Margin="0,0,0,10" Background="White">
-            <!-- 标签页一：硬件信息表 -->
-            <TabItem x:Name="TabHardware" Header="  硬件信息  " FontSize="13" Height="28">
-                <DataGrid x:Name="GridResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="项目" Binding="{Binding Key}" Width="150" FontWeight="Bold"/>
-                        <DataGridTextColumn Header="内容" Binding="{Binding Value}" Width="*"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
-            
-            <!-- 标签页二：安装软件清单表 -->
-            <TabItem x:Name="TabSoftware" Header="  软件清单  " FontSize="13" Height="28">
-                <DataGrid x:Name="GridSoftwareResults" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" AlternatingRowBackground="#F9F9F9" BorderThickness="0">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="软件名称" Binding="{Binding Name}" Width="*" FontWeight="Bold"/>
-                        <DataGridTextColumn Header="版本号" Binding="{Binding Version}" Width="200"/>
-                        <DataGridTextColumn Header="安装日期" Binding="{Binding InstallDate}" Width="150"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
-        </TabControl>
+            <!-- 5. 底部进度状态 -->
+            <Grid Grid.Row="5" Margin="0,5,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="TxtStatus" Grid.Column="0" Text="准备就绪" VerticalAlignment="Center" Foreground="#666666" Margin="0,0,10,0"/>
+                <ProgressBar x:Name="ProgBar" Grid.Column="1" Height="15" Minimum="0" Maximum="100" Value="0" Visibility="Hidden"/>
+            </Grid>
+        </Grid>
 
-        <!-- 5. 底部进度状态 -->
-        <Grid Grid.Row="5" Margin="0,5,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="TxtStatus" Grid.Column="0" Text="准备就绪" VerticalAlignment="Center" Foreground="#666666" Margin="0,0,10,0"/>
-            <ProgressBar x:Name="ProgBar" Grid.Column="1" Height="15" Minimum="0" Maximum="100" Value="0" Visibility="Hidden"/>
+        <!-- 【核心新增】退出密码验证遮罩层 (初始不显示) -->
+        <Grid x:Name="PasswordOverlay" Background="#99000000" Visibility="Collapsed">
+            <Border Width="350" Height="200" Background="White" CornerRadius="8" BorderThickness="1" BorderBrush="#CCCCCC" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="安全退出验证" FontSize="16" FontWeight="Bold" Foreground="#333333" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+                    
+                    <StackPanel Grid.Row="1">
+                        <TextBlock Text="退出客户端需要管理员授权验证：" Margin="0,0,0,5" Foreground="#666666"/>
+                        <PasswordBox x:Name="TxtExitPassword" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,15"/>
+                    </StackPanel>
+                    
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <Button Content="确认退出" Width="80" Height="28" Click="BtnConfirmExit_Click" Background="#D9534F" Foreground="White" BorderThickness="0" Margin="0,0,10,0"/>
+                        <Button Content="取消" Width="80" Height="28" Click="BtnCancelExit_Click" Background="#CCCCCC" BorderThickness="0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </Window>

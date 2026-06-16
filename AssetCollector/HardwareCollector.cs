@@ -7,6 +7,14 @@ using Microsoft.Win32;
 
 namespace AssetCollector
 {
+    // 定义软件清单模型
+    public class SoftwareItem
+    {
+        public string Name { get; set; }
+        public string Version { get; set; }
+        public string InstallDate { get; set; }
+    }
+
     public class HardwareCollector
     {
         public static string GetOSInfo() { 
@@ -88,9 +96,8 @@ namespace AssetCollector
             return (macList.Count > 0 ? string.Join(" | ", macList) : "Unknown", ipList.Count > 0 ? string.Join(" | ", ipList) : "Unknown");
         }
 
-        public static string GetSystemModel()
-        {
-            try { using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem")) { foreach (var i in s.Get()) return $"{i["Manufacturer"]} {i["Model"]}".Trim(); } } catch { } return "Unknown Model";
+        public static string GetSystemModel() { 
+            try { using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem")) { foreach (var i in s.Get()) return $"{i["Manufacturer"]} {i["Model"]}".Trim(); } } catch { } return "Unknown Model"; 
         }
 
         public static string GetMonitorInfo()
@@ -121,18 +128,18 @@ namespace AssetCollector
             return result.Trim();
         }
 
-        // 【新增】扫描全机所有已安装的软件 (从注册表读取)
-        public static string GetInstalledSoftware()
+        // 【精细化重写】获取详细软件列表，带版本号和安装日期
+        public static List<SoftwareItem> GetInstalledSoftwareList()
         {
-            var softwareList = new List<string>();
+            var softwareList = new List<SoftwareItem>();
             string[] registryPaths = {
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall" // 32位软件在64位系统上的路径
+                @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
             };
 
             try
             {
-                // 1. 读取 LocalMachine 注册表 (所有用户安装的)
+                // 1. 读取 LocalMachine
                 using (var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
                 {
                     foreach (var path in registryPaths)
@@ -149,10 +156,18 @@ namespace AssetCollector
                                     string systemComponent = subkey.GetValue("SystemComponent")?.ToString();
                                     string parentKeyName = subkey.GetValue("ParentKeyName")?.ToString();
 
-                                    // 排除掉补丁、系统更新等非独立应用
                                     if (!string.IsNullOrEmpty(displayName) && systemComponent != "1" && string.IsNullOrEmpty(parentKeyName))
                                     {
-                                        softwareList.Add(displayName);
+                                        string version = subkey.GetValue("DisplayVersion")?.ToString()?.Trim() ?? "Unknown";
+                                        string rawDate = subkey.GetValue("InstallDate")?.ToString()?.Trim() ?? "Unknown";
+                                        
+                                        // 规范化日期格式（如果是YYYYMMDD格式，转为 YYYY-MM-DD）
+                                        if (rawDate.Length == 8 && double.TryParse(rawDate, out _))
+                                        {
+                                            rawDate = $"{rawDate.Substring(0, 4)}-{rawDate.Substring(4, 2)}-{rawDate.Substring(6, 2)}";
+                                        }
+
+                                        softwareList.Add(new SoftwareItem { Name = displayName, Version = version, InstallDate = rawDate });
                                     }
                                 }
                             }
@@ -160,7 +175,7 @@ namespace AssetCollector
                     }
                 }
 
-                // 2. 读取 CurrentUser 注册表 (当前用户安装的)
+                // 2. 读取 CurrentUser
                 using (var currentUser = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64))
                 {
                     using (var key = currentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"))
@@ -175,7 +190,14 @@ namespace AssetCollector
                                     string displayName = subkey.GetValue("DisplayName")?.ToString()?.Trim();
                                     if (!string.IsNullOrEmpty(displayName))
                                     {
-                                        softwareList.Add(displayName);
+                                        string version = subkey.GetValue("DisplayVersion")?.ToString()?.Trim() ?? "Unknown";
+                                        string rawDate = subkey.GetValue("InstallDate")?.ToString()?.Trim() ?? "Unknown";
+                                        if (rawDate.Length == 8 && double.TryParse(rawDate, out _))
+                                        {
+                                            rawDate = $"{rawDate.Substring(0, 4)}-{rawDate.Substring(4, 2)}-{rawDate.Substring(6, 2)}";
+                                        }
+
+                                        softwareList.Add(new SoftwareItem { Name = displayName, Version = version, InstallDate = rawDate });
                                     }
                                 }
                             }
@@ -185,9 +207,12 @@ namespace AssetCollector
             }
             catch { }
 
-            // 去除重复、按字母排序并拼接成单行文本
-            var sortedList = softwareList.Distinct().OrderBy(s => s).ToList();
-            return sortedList.Count > 0 ? string.Join(" | ", sortedList) : "未检测到安装的第三方软件";
+            // 过滤重复软件名，并按软件名字母排序
+            return softwareList
+                .GroupBy(s => s.Name)
+                .Select(g => g.First())
+                .OrderBy(s => s.Name)
+                .ToList();
         }
     }
 }

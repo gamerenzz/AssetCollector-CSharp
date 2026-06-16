@@ -1,0 +1,36 @@
+<Window x:Class="AssetCollector.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="终端资产管理平台-客户端" Height="450" Width="800"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 第一排：位置信息 -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Label Content="楼号:" VerticalAlignment="Center"/>
+            <TextBox x:Name="TxtBuilding" Width="80" Margin="5,0,15,0" VerticalContentAlignment="Center"/>
+            
+            <Label Content="科室:" VerticalAlignment="Center"/>
+            <TextBox x:Name="TxtDept" Width="100" Margin="5,0,15,0" VerticalContentAlignment="Center"/>
+        </StackPanel>
+
+        <!-- 第二排：按钮 -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button x:Name="BtnScan" Content="扫描硬件信息" Width="120" Height="30" Margin="0,0,10,0" Click="BtnScan_Click"/>
+            <Button x:Name="BtnUpload" Content="上传至服务器" Width="120" Height="30" IsEnabled="False"/>
+        </StackPanel>
+
+        <!-- 第三排：数据展示表格 -->
+        <DataGrid x:Name="GridResults" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="项目" Binding="{Binding Key}" Width="150"/>
+                <DataGridTextColumn Header="内容" Binding="{Binding Value}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>

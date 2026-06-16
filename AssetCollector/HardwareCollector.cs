@@ -28,25 +28,18 @@ namespace AssetCollector
             try { using (var s = new ManagementObjectSearcher("SELECT Manufacturer, Product, SerialNumber FROM Win32_BaseBoard")) { foreach (var i in s.Get()) return $"制造商: {i["Manufacturer"]} | 型号: {i["Product"]} | 序列号: {i["SerialNumber"]}"; } } catch { } return "Unknown Motherboard"; 
         }
 
-        // 显卡信息：加入了 wjidd 过滤
         public static string GetGpuInfo()
         {
             try
             {
                 List<string> gpus = new List<string>();
-                // 这里是显卡黑名单，包含 sunlogin(向日葵), wjidd(无界虚拟显卡) 等
                 string[] blockList = { "sunlogin", "oray", "gameviewer", "virtual", "radmin", "wjidd" }; 
-
                 using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
                 {
                     foreach (var item in searcher.Get())
                     {
                         string name = item["Name"]?.ToString().Trim();
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            bool isBlocked = blockList.Any(b => name.ToLower().Contains(b));
-                            if (!isBlocked) gpus.Add(name);
-                        }
+                        if (!string.IsNullOrEmpty(name) && !blockList.Any(b => name.ToLower().Contains(b))) gpus.Add(name);
                     }
                 }
                 return gpus.Count > 0 ? string.Join(" | ", gpus) : "Unknown GPU";
@@ -55,45 +48,34 @@ namespace AssetCollector
             return "Unknown GPU";
         }
 
-        // 【核心修复】网卡 MAC 与 IP：收集所有真实的物理网卡并拼接
         public static (string MAC, string IP) GetNetworkInfo()
         {
             List<string> macList = new List<string>();
             List<string> ipList = new List<string>();
-
             try
             {
                 foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
                 {
-                    // 过滤掉未连接的网卡、回环网卡（127.0.0.1）和隧道网卡
-                    if (nic.OperationalStatus == OperationalStatus.Up && 
-                        nic.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
-                        nic.NetworkInterfaceType != NetworkInterfaceType.Tunnel)
+                    if (nic.OperationalStatus == OperationalStatus.Up && nic.NetworkInterfaceType != NetworkInterfaceType.Loopback && nic.NetworkInterfaceType != NetworkInterfaceType.Tunnel)
                     {
-                        // 过滤掉常见的虚拟机网卡（VMware, VirtualBox, Hyper-V 等）
                         string desc = nic.Description.ToLower();
-                        if (desc.Contains("vmware") || desc.Contains("virtual") || desc.Contains("hyper-v"))
-                            continue;
+                        if (desc.Contains("vmware") || desc.Contains("virtual") || desc.Contains("hyper-v")) continue;
 
                         var macBytes = nic.GetPhysicalAddress().GetAddressBytes();
-                        if (macBytes.Length == 6) // 标准 MAC 地址长度
+                        if (macBytes.Length == 6)
                         {
                             string currentMac = string.Join("-", macBytes.Select(b => b.ToString("X2")));
                             string currentIp = "";
-
                             foreach (var ipInfo in nic.GetIPProperties().UnicastAddresses)
                             {
-                                if (ipInfo.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) // 仅收集 IPv4
+                                if (ipInfo.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                                 {
                                     currentIp = ipInfo.Address.ToString();
-                                    break; // 只取该网卡的第一个 IPv4 地址即可
+                                    break;
                                 }
                             }
-
-                            // 只有当该网卡真正分配到了 IP 时，我们才把它列出来
                             if (!string.IsNullOrEmpty(currentIp))
                             {
-                                // 带上网卡名称前缀，例如 "WLAN: 192.168.1.x"
                                 macList.Add($"{nic.Name}: {currentMac}");
                                 ipList.Add($"{nic.Name}: {currentIp}");
                             }
@@ -102,12 +84,63 @@ namespace AssetCollector
                 }
             }
             catch { }
+            return (macList.Count > 0 ? string.Join(" | ", macList) : "Unknown", ipList.Count > 0 ? string.Join(" | ", ipList) : "Unknown");
+        }
 
-            // 使用 " | " 将多个网卡信息拼接起来
-            string finalMac = macList.Count > 0 ? string.Join(" | ", macList) : "Unknown";
-            string finalIp = ipList.Count > 0 ? string.Join(" | ", ipList) : "Unknown";
+        // 【新增】获取整机品牌与型号 (如: Dell OptiPlex 7090)
+        public static string GetSystemModel()
+        {
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"))
+                {
+                    foreach (var item in searcher.Get())
+                    {
+                        return $"{item["Manufacturer"]} {item["Model"]}".Trim();
+                    }
+                }
+            }
+            catch { }
+            return "Unknown Model";
+        }
 
-            return (finalMac, finalIp);
+        // 【新增】获取外接显示器信息 (名称与序列号)
+        public static string GetMonitorInfo()
+        {
+            List<string> monitors = new List<string>();
+            try
+            {
+                // WMI 中的显示器数据在 root\wmi 命名空间下
+                using (var searcher = new ManagementObjectSearcher(@"root\wmi", "SELECT UserFriendlyName, SerialNumberID FROM WmiMonitorID"))
+                {
+                    foreach (var item in searcher.Get())
+                    {
+                        // 显示器名字和序列号是以 UInt16 数组存储的 ASCII 码，需要解码
+                        string name = DecodeWmiCharArray(item["UserFriendlyName"] as ushort[]);
+                        string serial = DecodeWmiCharArray(item["SerialNumberID"] as ushort[]);
+                        
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            monitors.Add($"{name} (SN: {serial})");
+                        }
+                    }
+                }
+                return monitors.Count > 0 ? string.Join(" | ", monitors) : "未检测到外接显示器";
+            }
+            catch { }
+            return "获取显示器信息失败";
+        }
+
+        // 帮助方法：解码 WMI 中的 UInt16 字符数组
+        private static string DecodeWmiCharArray(ushort[] array)
+        {
+            if (array == null) return "";
+            string result = "";
+            foreach (var c in array)
+            {
+                if (c > 0) result += (char)c;
+            }
+            return result.Trim();
         }
     }
 }

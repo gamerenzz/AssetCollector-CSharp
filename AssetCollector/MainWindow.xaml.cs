@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace AssetCollector
 {
@@ -11,32 +13,94 @@ namespace AssetCollector
             InitializeComponent();
         }
 
-        // 按钮点击事件：加上 async 关键字实现异步防卡顿
+        // 文本框内容改变时，检查是否填写完整，完整才启用“扫描”按钮
+        private void Input_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!string.IsNullOrWhiteSpace(TxtBuilding.Text) &&
+                !string.IsNullOrWhiteSpace(TxtFloor.Text) &&
+                !string.IsNullOrWhiteSpace(TxtDept.Text) &&
+                !string.IsNullOrWhiteSpace(TxtAssetType.Text))
+            {
+                BtnScan.IsEnabled = true;
+            }
+            else
+            {
+                BtnScan.IsEnabled = false;
+            }
+        }
+
+        // 扫描按钮点击事件
         private async void BtnScan_Click(object sender, RoutedEventArgs e)
         {
+            // 锁定界面状态
             BtnScan.IsEnabled = false;
-            BtnScan.Content = "扫描中...";
+            BtnUpload.IsEnabled = false;
+            BtnExport.IsEnabled = false;
+            BtnScan.Content = "正在扫描...";
+            ProgBar.Visibility = Visibility.Visible;
+            ProgBar.Value = 0;
 
-            // 使用 Task.Run 在后台线程执行 WMI 采集，避免 UI 卡死
-            var results = await Task.Run(() => 
-            {
-                var list = new List<ResultItem>();
-                list.Add(new ResultItem { Key = "基础信息", Value = HardwareCollector.GetBasicInfo() });
-                list.Add(new ResultItem { Key = "处理器", Value = HardwareCollector.GetCpuInfo() });
-                // 后续可以补充内存、显卡、MAC地址等
-                return list;
-            });
+            // 后台异步执行采集，防止 UI 卡顿
+            var results = await Task.Run(() => PerformScan());
 
-            // 绑定到界面表格
+            // 绑定数据到表格
             GridResults.ItemsSource = results;
 
-            BtnScan.Content = "扫描完成";
+            // 恢复界面状态
+            ProgBar.Value = 100;
+            TxtStatus.Text = $"采集完成 - {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+            BtnScan.Content = "重新扫描";
             BtnScan.IsEnabled = true;
-            BtnUpload.IsEnabled = true;
+            BtnUpload.IsEnabled = true;  // 激活上传按钮
+            BtnExport.IsEnabled = true;  // 激活导出按钮
+            
+            // 延迟2秒后隐藏进度条
+            await Task.Delay(2000);
+            ProgBar.Visibility = Visibility.Hidden;
+        }
+
+        // 具体的扫描任务
+        private List<ResultItem> PerformScan()
+        {
+            var list = new List<ResultItem>();
+
+            // 这里使用 Dispatcher.Invoke 是为了在后台线程安全地更新前台 UI 的进度文字
+            UpdateProgress(10, "正在采集系统信息...");
+            list.Add(new ResultItem { Key = "计算机名称", Value = Environment.MachineName });
+            list.Add(new ResultItem { Key = "用户名", Value = Environment.UserName });
+            list.Add(new ResultItem { Key = "操作系统", Value = HardwareCollector.GetOSInfo() });
+
+            UpdateProgress(30, "正在采集处理器和内存...");
+            list.Add(new ResultItem { Key = "处理器", Value = HardwareCollector.GetCpuInfo() });
+            list.Add(new ResultItem { Key = "内存", Value = HardwareCollector.GetRamInfo() });
+
+            UpdateProgress(50, "正在采集磁盘信息...");
+            list.Add(new ResultItem { Key = "磁盘", Value = HardwareCollector.GetDiskInfo() });
+
+            UpdateProgress(70, "正在采集网络信息...");
+            var netInfo = HardwareCollector.GetNetworkInfo();
+            list.Add(new ResultItem { Key = "IP地址", Value = netInfo.IP });
+            list.Add(new ResultItem { Key = "MAC地址", Value = netInfo.MAC });
+
+            UpdateProgress(90, "正在采集主板和显卡信息...");
+            list.Add(new ResultItem { Key = "主板信息", Value = HardwareCollector.GetMotherboardInfo() });
+            list.Add(new ResultItem { Key = "显卡", Value = HardwareCollector.GetGpuInfo() });
+
+            return list;
+        }
+
+        // 帮助更新进度条和状态文字
+        private void UpdateProgress(int percent, string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                ProgBar.Value = percent;
+                TxtStatus.Text = message;
+            });
         }
     }
 
-    // 用于绑定 DataGrid 的简单数据模型
+    // 表格数据模型
     public class ResultItem
     {
         public string Key { get; set; }

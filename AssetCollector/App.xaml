@@ -1,7 +1,7 @@
 <Application x:Class="AssetCollector.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 注意：这里已经删除了 StartupUri="MainWindow.xaml" 防止启动冲突 -->
     <Application.Resources>
     </Application.Resources>
 </Application>

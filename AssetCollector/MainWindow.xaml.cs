@@ -36,8 +36,6 @@ namespace AssetCollector
 
         private System.Windows.Forms.NotifyIcon trayIcon;
         private bool isForceExit = false; 
-        
-        // 【安全重构】默认退出密码从配置文件动态读取，默认还是 admin123
         private string ExitPassword = "admin123"; 
 
         private Timer syncTimer;
@@ -64,12 +62,20 @@ namespace AssetCollector
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            // 1. 启动时，先从服务端拉取一次最新规则策略
+            await Task.Run(() => SyncPolicyFromServerAsync());
+
+            // 2. 如果位置信息已经填写，且策略允许自动扫描（或者本地有未发送完的积压队列），则触发上报
             if (!string.IsNullOrWhiteSpace(TxtBuilding.Text) && 
                 !string.IsNullOrWhiteSpace(TxtFloor.Text) && 
                 !string.IsNullOrWhiteSpace(TxtDept.Text))
             {
-                UpdateStatusText("正在执行启动时自动静默扫描...");
-                await Task.Run(() => PerformSilentScanAndEnqueue());
+                var queue = LoadQueue();
+                if (CurrentPolicy.CollectHardware || CurrentPolicy.CollectSoftware || queue.Count > 0)
+                {
+                    UpdateStatusText("正在执行自动上报任务...");
+                    await Task.Run(() => PerformSilentScanAndEnqueue());
+                }
             }
         }
 
@@ -80,15 +86,8 @@ namespace AssetCollector
                 var hwList = new List<ResultItem>();
                 var swList = new List<SoftwareItem>();
 
-                if (CurrentPolicy.CollectHardware)
-                {
-                    hwList = PerformScanHardware();
-                }
-
-                if (CurrentPolicy.CollectSoftware)
-                {
-                    swList = HardwareCollector.GetInstalledSoftwareList();
-                }
+                if (CurrentPolicy.CollectHardware) hwList = PerformScanHardware();
+                if (CurrentPolicy.CollectSoftware) swList = HardwareCollector.GetInstalledSoftwareList();
 
                 var payload = new Dictionary<string, object>();
                 payload["server_url"] = TxtServerUrl.Text.Trim();
@@ -103,7 +102,6 @@ namespace AssetCollector
                 if (swList != null && swList.Count > 0) payload["software_list"] = swList;
 
                 EnqueuePayload(payload);
-
                 Task.Run(() => FlushQueueSequentialAsync());
             }
             catch { }
@@ -156,7 +154,7 @@ namespace AssetCollector
 
         private void InitializeSyncTimer()
         {
-            syncTimer = new Timer(120000);
+            syncTimer = new Timer(120000); // 默认 2 分钟轮询
             syncTimer.Elapsed += async (s, e) =>
             {
                 await SyncPolicyFromServerAsync(); 
@@ -172,6 +170,7 @@ namespace AssetCollector
             });
         }
 
+        // ========== 心跳并同步服务端规则策略 ==========
         private async Task SyncPolicyFromServerAsync()
         {
             try
@@ -196,20 +195,37 @@ namespace AssetCollector
                     var policy = JsonConvert.DeserializeObject<Dictionary<string, object>>(resBody);
                     if (policy != null)
                     {
-                        CurrentPolicy.CollectHardware = Convert.ToBoolean(policy["collect_hardware"]);
-                        CurrentPolicy.CollectSoftware = Convert.ToBoolean(policy["collect_software"]);
-                        CurrentPolicy.ScanIntervalMinutes = Convert.ToInt32(policy["scan_interval_minutes"]);
+                        int intervalMinutes = Convert.ToInt32(policy["scan_interval_minutes"]);
 
-                        double intervalMs = CurrentPolicy.ScanIntervalMinutes * 60.0 * 1000.0;
-                        if (intervalMs < 10000) intervalMs = 120000; 
-
-                        Dispatcher.Invoke(() =>
+                        // 【核心策略：单次上报休眠机制】
+                        if (intervalMinutes == 0)
                         {
-                            if (Math.Abs(syncTimer.Interval - intervalMs) > 100)
+                            // 如果服务端规则设为 0，代表“单次上报”。客户端将进入休眠心跳（5分钟一次轻量握手），且不再扫描软硬件
+                            CurrentPolicy.CollectHardware = false;
+                            CurrentPolicy.CollectSoftware = false;
+
+                            Dispatcher.Invoke(() =>
                             {
-                                syncTimer.Interval = intervalMs; 
-                            }
-                        });
+                                if (syncTimer.Interval != 300000) syncTimer.Interval = 300000; // 5分钟缓慢心跳
+                            });
+                        }
+                        else
+                        {
+                            // 恢复常规策略上报
+                            CurrentPolicy.CollectHardware = Convert.ToBoolean(policy["collect_hardware"]);
+                            CurrentPolicy.CollectSoftware = Convert.ToBoolean(policy["collect_software"]);
+
+                            double intervalMs = intervalMinutes * 60.0 * 1000.0;
+                            if (intervalMs < 120000) intervalMs = 120000;
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (Math.Abs(syncTimer.Interval - intervalMs) > 100)
+                                {
+                                    syncTimer.Interval = intervalMs;
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -381,7 +397,7 @@ namespace AssetCollector
 
         private void BtnConfirmExit_Click(object sender, RoutedEventArgs e)
         {
-            if (TxtExitPassword.Password == ExitPassword) // 使用动态加载的本地密码
+            if (TxtExitPassword.Password == ExitPassword) 
             {
                 isForceExit = true; 
                 PasswordOverlay.Visibility = Visibility.Collapsed;
@@ -413,7 +429,6 @@ namespace AssetCollector
             TxtExitPassword.Clear();
         }
 
-        // ========== 【新增】客户端修改退出安全密码功能 ==========
         private void BtnChangeExitPassword_Click(object sender, RoutedEventArgs e)
         {
             Window dialog = new Window { Title = "修改客户端安全退出密码", Width = 320, Height = 210, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this, ResizeMode = ResizeMode.NoResize, Background = System.Windows.Media.Brushes.White, FontFamily = this.FontFamily };
@@ -423,21 +438,18 @@ namespace AssetCollector
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            // 原密码
             StackPanel sp1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
             sp1.Children.Add(new Label { Content = "旧密码:", Width = 70 });
             PasswordBox txtOld = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
             sp1.Children.Add(txtOld);
             Grid.SetRow(sp1, 0);
 
-            // 新密码
             StackPanel sp2 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
             sp2.Children.Add(new Label { Content = "新密码:", Width = 70 });
             PasswordBox txtNew = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
             sp2.Children.Add(txtNew);
             Grid.SetRow(sp2, 1);
 
-            // 确认新密码
             StackPanel sp3 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 15) };
             sp3.Children.Add(new Label { Content = "重复新密码:", Width = 70 });
             PasswordBox txtConfirm = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
@@ -471,8 +483,8 @@ namespace AssetCollector
                     return;
                 }
 
-                ExitPassword = txtNew.Password; // 更新内存密码
-                SaveConfig(); // 保存至 config.json
+                ExitPassword = txtNew.Password; 
+                SaveConfig(); 
                 MessageBox.Show("客户端安全退出密码修改成功！并已安全保存在本地。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 dialog.DialogResult = true;
             };
@@ -540,8 +552,6 @@ namespace AssetCollector
                         if (cfg.ContainsKey("window_height")) this.Height = Convert.ToDouble(cfg["window_height"]);
                         if (cfg.ContainsKey("window_top")) this.Top = Convert.ToDouble(cfg["window_top"]);
                         if (cfg.ContainsKey("window_left")) this.Left = Convert.ToDouble(cfg["window_left"]);
-                        
-                        // 【安全重构】自 config.json 加载安全退出密码
                         if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
 
                         if (cfg.ContainsKey("custom_fields"))
@@ -574,7 +584,7 @@ namespace AssetCollector
                     { "window_height", this.ActualHeight },
                     { "window_top", this.Top },
                     { "window_left", this.Left },
-                    { "exit_password", ExitPassword }, // 保存安全退出密码到本地
+                    { "exit_password", ExitPassword }, 
                     { "custom_fields", JsonConvert.SerializeObject(customFields) }
                 };
                 File.WriteAllText(configFilePath, JsonConvert.SerializeObject(cfg, Formatting.Indented), Encoding.UTF8);

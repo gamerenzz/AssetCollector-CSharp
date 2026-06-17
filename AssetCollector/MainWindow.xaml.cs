@@ -15,43 +15,12 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 全局策略引擎持久化内存
+    // 全局策略引擎持久化内存 (仅保留这个，其余已在独立文件中)
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
         public static int LocalPolicyVersion = 0; // 本地记忆的最后执行版本
-    }
-
-    public static class DebugLogger
-    {
-        private static readonly object logLock = new object();
-        public static readonly List<string> Logs = new List<string>();
-        public static Action<string> OnLogAdded;
-
-        public static void Log(string level, string message, Exception ex = null)
-        {
-            string time = DateTime.Now.ToString("HH:mm:ss");
-            string line = $"[{time}] [{level}] {message}";
-            if (ex != null)
-            {
-                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
-            }
-
-            lock (logLock)
-            {
-                Logs.Add(line);
-                if (Logs.Count > 200) Logs.RemoveAt(0); 
-            }
-
-            OnLogAdded?.Invoke(line);
-        }
-    }
-
-    public class ResultItem
-    {
-        public string Key { get; set; }
-        public string Value { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -123,11 +92,19 @@ namespace AssetCollector
                     DebugLogger.Log("INFO", "策略执行：后台深度扫描硬件配置...");
                     hwList = PerformScanHardware();
                 }
+                else
+                {
+                    DebugLogger.Log("WARN", "策略控制：服务器要求禁止扫描硬件，已跳过。");
+                }
 
                 if (CurrentPolicy.CollectSoftware)
                 {
                     DebugLogger.Log("INFO", "策略执行：后台深度检索已安装软件名录...");
                     swList = HardwareCollector.GetInstalledSoftwareList();
+                }
+                else
+                {
+                    DebugLogger.Log("WARN", "策略控制：服务器要求禁止扫描软件清单，已跳过。");
                 }
 
                 var payload = BuildPayloadInternal(hwList, swList);
@@ -187,9 +164,7 @@ namespace AssetCollector
 
         private void InitializeSyncTimer()
         {
-            // 【核心调整】定时器永远保持固定时长（例如每 5 分钟一次心跳）
-            // 这个定时器再也不会自动触发大规模全盘扫描了，它只负责极其轻量的：
-            // 1. 问服务器有没有更新版本。 2. 检查本地有没有积压没发出去的数据。
+            // 定时器永远保持固定时长（5 分钟一次心跳）
             syncTimer = new Timer(300000); 
             syncTimer.Elapsed += async (s, e) =>
             {
@@ -201,7 +176,7 @@ namespace AssetCollector
             DebugLogger.Log("INFO", "智能心跳策略引擎已加载 (5分钟极轻量级寻址)。");
         }
 
-        // ========== 【重磅核心重构】纯事件/版本号驱动策略 ==========
+        // ========== 【重磅核心】纯事件/版本号驱动策略 ==========
         private async Task SyncPolicyAndExecuteScanAsync()
         {
             try
@@ -236,33 +211,32 @@ namespace AssetCollector
                         int serverVersion = Convert.ToInt32(policy["policy_version"]);
 
                         // 【核心逻辑：单次触发补查引擎】
-                        // 客户端只在发现自己的记录落后于服务器要求时，才老老实实地去进行深度的、耗时的软硬件扫描
+                        // 客户端只在发现自己的记录落后于服务器要求时，才去进行深度的、耗时的软硬件扫描
                         if (serverVersion > CurrentPolicy.LocalPolicyVersion)
                         {
                             DebugLogger.Log("INFO", $"⚡ 侦测到服务器策略更新/指令下发 (本地v{CurrentPolicy.LocalPolicyVersion} -> 目标v{serverVersion})。立即唤醒深度扫描与上报！");
                             
                             // 更新本地记忆，下次如果版本不变，就死也不会再扫了！
                             CurrentPolicy.LocalPolicyVersion = serverVersion;
-                            Dispatcher.Invoke(() => SaveConfig()); // 立即写盘，防止断电记忆丢失
+                            Dispatcher.Invoke(() => SaveConfig()); 
 
                             // 丢到后台线程去慢慢扫，绝对不阻塞心跳
                             _ = Task.Run(() => PerformSilentScanAndEnqueue()); 
                         }
                         else
                         {
-                            // 极高优化：版本没变，这台电脑绝对安全地处于休眠驻留状态，消耗资源趋近于 0
+                            // 版本没变，这台电脑绝对安全地处于休眠驻留状态，消耗资源趋近于 0
                         }
                     }
                 }
                 else
                 {
-                    DebugLogger.Log("WARN", $"心跳握手被拒：HTTP {(int)response.StatusCode}。这通常是因为该终端尚未在服务端建档注册，或者服务器处于离线状态。请尝试手动点击一次[上传至服务器]完成注册。");
+                    DebugLogger.Log("WARN", $"心跳握手被拒：HTTP {(int)response.StatusCode}。这通常是因为该终端尚未在服务端建档注册，请尝试手动点击一次[上传至服务器]完成注册。");
                 }
             }
             catch (Exception)
             {
-                // 网络不通、服务器关机等情况，保持极度静默，不抛出异常。
-                // 这样不管电脑怎么断网换网，用户都不会被打扰。
+                // 网络不通、服务器关机等情况，保持极度静默
             } 
         }
 
@@ -693,9 +667,9 @@ namespace AssetCollector
                         if (cfg.ContainsKey("window_height")) this.Height = Convert.ToDouble(cfg["window_height"]);
                         if (cfg.ContainsKey("window_top")) this.Top = Convert.ToDouble(cfg["window_top"]);
                         if (cfg.ContainsKey("window_left")) this.Left = Convert.ToDouble(cfg["window_left"]);
-                        if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
                         
-                        // 【核心恢复】恢复本地记忆的策略版本，确保重启不丢记忆
+                        // 【核心安全】持久化读取本地记录的版本号，确保断电不丢失
+                        if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
                         if (cfg.ContainsKey("local_policy_version")) CurrentPolicy.LocalPolicyVersion = Convert.ToInt32(cfg["local_policy_version"]);
 
                         if (cfg.ContainsKey("custom_fields"))

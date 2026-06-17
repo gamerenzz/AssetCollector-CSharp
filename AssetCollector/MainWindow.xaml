@@ -21,6 +21,8 @@
             <DockPanel Grid.Row="0" Margin="0,0,0,5">
                 <TextBlock Text="终端资产管理" FontSize="16" FontWeight="Bold" Foreground="#333333" VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- 【新增】修改退出密码按钮 -->
+                    <Button Content="修改退出密码" Width="90" Height="25" Margin="0,0,10,0" Click="BtnChangeExitPassword_Click" Background="#E1E1E1" BorderThickness="0"/>
                     <CheckBox x:Name="ChkAutoStart" Content="开机自启" Margin="0,0,15,0" VerticalAlignment="Center" Checked="ChkAutoStart_Checked" Unchecked="ChkAutoStart_Unchecked"/>
                     <Button Content="帮助 / 关于" Width="90" Height="25" Click="BtnHelp_Click" Background="#E1E1E1" BorderThickness="0"/>
                 </StackPanel>

@@ -15,13 +15,43 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 【高阶重构】全局策略引擎持久化内存
+    // 全局策略引擎持久化内存
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
         public static int LocalPolicyVersion = 0; // 本地记忆的最后执行版本
-        public static DateTime LastScanTime = DateTime.MinValue; // 本地记忆的最后扫描时间
+    }
+
+    public static class DebugLogger
+    {
+        private static readonly object logLock = new object();
+        public static readonly List<string> Logs = new List<string>();
+        public static Action<string> OnLogAdded;
+
+        public static void Log(string level, string message, Exception ex = null)
+        {
+            string time = DateTime.Now.ToString("HH:mm:ss");
+            string line = $"[{time}] [{level}] {message}";
+            if (ex != null)
+            {
+                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
+            }
+
+            lock (logLock)
+            {
+                Logs.Add(line);
+                if (Logs.Count > 200) Logs.RemoveAt(0); 
+            }
+
+            OnLogAdded?.Invoke(line);
+        }
+    }
+
+    public class ResultItem
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -70,15 +100,17 @@ namespace AssetCollector
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             DebugLogger.Log("INFO", "客户端主界面渲染加载完成。");
-            // 开机启动时如果发现有积压历史数据，先尝试清空
+            
             if (LoadQueue().Count > 0)
             {
                 UpdateStatusText("发现本地离线积压数据，尝试上报...");
                 await Task.Run(() => FlushQueueSequentialAsync());
             }
+
+            // 软件启动时，立刻去服务器问一下有没有新任务
+            await Task.Run(() => SyncPolicyAndExecuteScanAsync());
         }
 
-        // 智能静默扫描（根据策略引擎自动取舍硬件与软件）
         private void PerformSilentScanAndEnqueue()
         {
             try
@@ -155,7 +187,10 @@ namespace AssetCollector
 
         private void InitializeSyncTimer()
         {
-            syncTimer = new Timer(120000); 
+            // 【核心调整】定时器永远保持固定时长（例如每 5 分钟一次心跳）
+            // 这个定时器再也不会自动触发大规模全盘扫描了，它只负责极其轻量的：
+            // 1. 问服务器有没有更新版本。 2. 检查本地有没有积压没发出去的数据。
+            syncTimer = new Timer(300000); 
             syncTimer.Elapsed += async (s, e) =>
             {
                 await SyncPolicyAndExecuteScanAsync(); 
@@ -163,16 +198,10 @@ namespace AssetCollector
             };
             syncTimer.AutoReset = true;
             syncTimer.Start();
-            DebugLogger.Log("INFO", "智能心跳策略引擎已加载。");
-
-            Task.Run(async () =>
-            {
-                await SyncPolicyAndExecuteScanAsync();
-                await FlushQueueSequentialAsync();
-            });
+            DebugLogger.Log("INFO", "智能心跳策略引擎已加载 (5分钟极轻量级寻址)。");
         }
 
-        // ========== 【重磅核心】策略对齐与条件唤醒引擎 ==========
+        // ========== 【重磅核心重构】纯事件/版本号驱动策略 ==========
         private async Task SyncPolicyAndExecuteScanAsync()
         {
             try
@@ -203,58 +232,37 @@ namespace AssetCollector
                     {
                         CurrentPolicy.CollectHardware = Convert.ToBoolean(policy["collect_hardware"]);
                         CurrentPolicy.CollectSoftware = Convert.ToBoolean(policy["collect_software"]);
-                        int intervalMinutes = Convert.ToInt32(policy["scan_interval_minutes"]);
+                        
                         int serverVersion = Convert.ToInt32(policy["policy_version"]);
 
-                        bool shouldScanNow = false;
-
-                        // 规则 A：服务器更新了规则版本（例如：管理员新建分组或强制重扫）
-                        // 完美实现“断网后开机如果错过了版本，自动补发一次”
+                        // 【核心逻辑：单次触发补查引擎】
+                        // 客户端只在发现自己的记录落后于服务器要求时，才老老实实地去进行深度的、耗时的软硬件扫描
                         if (serverVersion > CurrentPolicy.LocalPolicyVersion)
                         {
-                            DebugLogger.Log("INFO", $"⚡ 侦测到服务器策略升级 (v{CurrentPolicy.LocalPolicyVersion} -> v{serverVersion})。立即唤醒深度扫描！");
-                            shouldScanNow = true;
+                            DebugLogger.Log("INFO", $"⚡ 侦测到服务器策略更新/指令下发 (本地v{CurrentPolicy.LocalPolicyVersion} -> 目标v{serverVersion})。立即唤醒深度扫描与上报！");
+                            
+                            // 更新本地记忆，下次如果版本不变，就死也不会再扫了！
                             CurrentPolicy.LocalPolicyVersion = serverVersion;
-                        }
-                        // 规则 B：定时采集模式（如果不是设为 0 的单次休眠模式，且时间到了）
-                        else if (intervalMinutes > 0)
-                        {
-                            var timeSinceLast = DateTime.Now - CurrentPolicy.LastScanTime;
-                            if (timeSinceLast.TotalMinutes >= intervalMinutes)
-                            {
-                                DebugLogger.Log("INFO", $"⏱️ 定时上报周期 ({intervalMinutes} 分钟) 已到期。立即唤醒深度扫描！");
-                                shouldScanNow = true;
-                            }
-                        }
+                            Dispatcher.Invoke(() => SaveConfig()); // 立即写盘，防止断电记忆丢失
 
-                        // 如果满足以上任何唤醒规则，则触发静默扫描，并记录执行时间
-                        if (shouldScanNow)
-                        {
-                            CurrentPolicy.LastScanTime = DateTime.Now;
-                            Dispatcher.Invoke(() => SaveConfig()); // 将新版本和时间刻入本地 config.json
-                            _ = Task.Run(() => PerformSilentScanAndEnqueue()); // 启动线程独立运行扫描，不阻塞心跳
+                            // 丢到后台线程去慢慢扫，绝对不阻塞心跳
+                            _ = Task.Run(() => PerformSilentScanAndEnqueue()); 
                         }
-
-                        // 智能调频：如果配置为单次上报(0)，平时进入低耗能的 5 分钟轻心跳；否则每 2 分钟心跳并检查周期
-                        double heartbeatMs = intervalMinutes == 0 ? 300000 : 120000;
-                        Dispatcher.Invoke(() =>
+                        else
                         {
-                            if (Math.Abs(syncTimer.Interval - heartbeatMs) > 100)
-                            {
-                                syncTimer.Interval = heartbeatMs;
-                                DebugLogger.Log("INFO", $"❤️ 心跳频率自适应调整为 {heartbeatMs/1000} 秒一跳。");
-                            }
-                        });
+                            // 极高优化：版本没变，这台电脑绝对安全地处于休眠驻留状态，消耗资源趋近于 0
+                        }
                     }
                 }
                 else
                 {
-                    DebugLogger.Log("WARN", $"心跳握手被拒：HTTP {(int)response.StatusCode}。设备可能未注册（请点击一次手动上传完成建档）。");
+                    DebugLogger.Log("WARN", $"心跳握手被拒：HTTP {(int)response.StatusCode}。这通常是因为该终端尚未在服务端建档注册，或者服务器处于离线状态。请尝试手动点击一次[上传至服务器]完成注册。");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                DebugLogger.Log("ERROR", "网络异常：心跳寻址失败。", ex);
+                // 网络不通、服务器关机等情况，保持极度静默，不抛出异常。
+                // 这样不管电脑怎么断网换网，用户都不会被打扰。
             } 
         }
 
@@ -448,9 +456,10 @@ namespace AssetCollector
                 "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
                 "开发人员：Tonekey2016\n\n" +
                 "【终极策略引擎机制说明】：\n" +
-                "1. 本系统支持智能策略版本对齐技术。如果你设置0分钟单次上报，扫描一次后客户端会永远彻底休眠。\n" +
-                "2. 只要网页端下发了强制扫描，哪怕断网关机10天，开机重连后也会立刻触发一次深度收集。\n" +
-                "3. 点击左侧 [修改退出密码] 可完全脱离硬编码，安全存储自定义退出凭证。",
+                "1. 本系统使用基于 [版本驱动] 的智能休眠采集架构，永远告别高频轮询的性能浪费。\n" +
+                "2. 只要您在服务器网页端点击了下发强制扫描，客户端下一次心跳握手时发现版本号升高，就会立刻自动唤醒并扫描。\n" +
+                "3. 上传成功后，客户端会自动把本地版本与服务器对齐，从此进入长久的彻底休眠（仅保持每 5 分钟极轻量心跳）。\n" +
+                "4. 如果客户端关机数日，只要开机联网，发现自己错过了版本号，同样会立刻补报一次，绝对不会有资产漏网！",
                 "帮助说明", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
@@ -684,11 +693,10 @@ namespace AssetCollector
                         if (cfg.ContainsKey("window_height")) this.Height = Convert.ToDouble(cfg["window_height"]);
                         if (cfg.ContainsKey("window_top")) this.Top = Convert.ToDouble(cfg["window_top"]);
                         if (cfg.ContainsKey("window_left")) this.Left = Convert.ToDouble(cfg["window_left"]);
-                        
-                        // 【核心新增加载】从配置载入版本和最后扫描时间记忆
                         if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
+                        
+                        // 【核心恢复】恢复本地记忆的策略版本，确保重启不丢记忆
                         if (cfg.ContainsKey("local_policy_version")) CurrentPolicy.LocalPolicyVersion = Convert.ToInt32(cfg["local_policy_version"]);
-                        if (cfg.ContainsKey("last_scan_time")) CurrentPolicy.LastScanTime = Convert.ToDateTime(cfg["last_scan_time"]);
 
                         if (cfg.ContainsKey("custom_fields"))
                         {
@@ -722,7 +730,6 @@ namespace AssetCollector
                     { "window_left", this.Left },
                     { "exit_password", ExitPassword }, 
                     { "local_policy_version", CurrentPolicy.LocalPolicyVersion }, 
-                    { "last_scan_time", CurrentPolicy.LastScanTime.ToString("o") }, 
                     { "custom_fields", JsonConvert.SerializeObject(customFields) }
                 };
                 File.WriteAllText(configFilePath, JsonConvert.SerializeObject(cfg, Formatting.Indented), Encoding.UTF8);

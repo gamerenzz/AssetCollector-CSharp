@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-// 【新增】引入 JSON 忽略命名空间
 using System.Text.Json.Serialization;
 
 namespace AssetServer
 {
-    // 1. 资产台账表
     public class Asset
     {
         [Key]
@@ -21,8 +19,8 @@ namespace AssetServer
         public string RAM { get; set; } = string.Empty;
         public string Disk { get; set; } = string.Empty;
         public string GPU { get; set; } = string.Empty;
-        public string Motherboard { get; set; } = string.Empty;
         public string Monitor { get; set; } = string.Empty;
+        public string Motherboard { get; set; } = string.Empty;
         public string SystemModel { get; set; } = string.Empty;
 
         public string Building { get; set; } = string.Empty;
@@ -39,12 +37,10 @@ namespace AssetServer
 
         public DateTime LastReportTime { get; set; } = DateTime.Now;
 
-        // 【修正】防止查询 Asset 时级联序列化软件清单造成可能的死循环
         [JsonIgnore]
         public ICollection<SoftwareInfo> InstalledSoftware { get; set; } = new List<SoftwareInfo>();
     }
 
-    // 2. 已安装软件明细表
     public class SoftwareInfo
     {
         [Key]
@@ -53,7 +49,6 @@ namespace AssetServer
 
         public string AssetId { get; set; } = string.Empty; 
         [ForeignKey("AssetId")]
-        // 【修正】防止序列化软件明细时往回序列化 Asset 造成死循环
         [JsonIgnore]
         public Asset? Asset { get; set; }
 
@@ -62,7 +57,6 @@ namespace AssetServer
         public string InstallDate { get; set; } = string.Empty;
     }
 
-    // 3. 分组表
     public class Group
     {
         [Key]
@@ -76,7 +70,6 @@ namespace AssetServer
         public Policy? Policy { get; set; }
     }
 
-    // 4. 采集规则/策略表
     public class Policy
     {
         [Key]
@@ -85,16 +78,17 @@ namespace AssetServer
 
         public int GroupId { get; set; }
         [ForeignKey("GroupId")]
-        // 【修正】核心修复：防止序列化策略时往回序列化 Group 造成死循环崩溃
         [JsonIgnore]
         public Group? Group { get; set; }
 
         public bool CollectHardware { get; set; } = true;  
         public bool CollectSoftware { get; set; } = true;  
         public int ScanIntervalMinutes { get; set; } = 120; 
+
+        // 【核心新增】策略版本号控制属性，默认版本 1
+        public int Version { get; set; } = 1;
     }
 
-    // 5. 安全审计/系统日志表
     public class SystemLog
     {
         [Key]
@@ -107,7 +101,6 @@ namespace AssetServer
         public string Details { get; set; } = string.Empty;
     }
 
-    // 6. 管理后台用户表
     public class User
     {
         [Key]

@@ -10,18 +10,17 @@ using Microsoft.Win32;
 using ClosedXML.Excel;
 using System.IO;
 using System.Drawing;
-using System.Timers; // 引入后台定时器所需命名空间
+using System.Timers; 
 
 namespace AssetCollector
 {
     public partial class MainWindow : Window
     {
-        private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) }; // 缩短超时时间
+        private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) }; 
         private List<ResultItem> currentResults = new List<ResultItem>();
         private List<SoftwareItem> currentSoftwareResults = new List<SoftwareItem>();
         
         private readonly string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-        // 【新增】本地加密队列文件路径
         private readonly string queueFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "queue.dat");
         
         private bool isLoaded = false;
@@ -31,7 +30,6 @@ namespace AssetCollector
         private bool isForceExit = false; 
         private const string ExitPasswordHash = "admin123"; 
 
-        // 【新增】定时同步与线程排队锁
         private Timer syncTimer;
         private static readonly object syncLock = new object();
         private bool isSyncing = false;
@@ -51,13 +49,11 @@ namespace AssetCollector
             }
             
             CheckAutoStartStatus();
-            InitializeSyncTimer(); // 启动后台排队重传机制
+            InitializeSyncTimer(); 
         }
 
-        // ========== 【新增】窗体加载完毕后的后台自动任务 ==========
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // 如果位置信息已经配置好了，开机自动静默在后台扫描并入队上报
             if (!string.IsNullOrWhiteSpace(TxtBuilding.Text) && 
                 !string.IsNullOrWhiteSpace(TxtFloor.Text) && 
                 !string.IsNullOrWhiteSpace(TxtDept.Text))
@@ -71,33 +67,28 @@ namespace AssetCollector
         {
             try
             {
-                // 静默扫描硬件
                 var hwList = PerformScanHardware();
                 var swList = HardwareCollector.GetInstalledSoftwareList();
 
-                // 打包数据
                 var payload = new Dictionary<string, object>();
                 payload["server_url"] = TxtServerUrl.Text.Trim();
                 payload["building"] = TxtBuilding.Text.Trim();
                 payload["floor"] = TxtFloor.Text.Trim();
                 payload["department"] = TxtDept.Text.Trim();
                 payload["type"] = TxtAssetType.Text.Trim();
-                payload["report_type"] = "auto_startup"; // 标识为自启动上报
+                payload["report_type"] = "auto_startup"; 
 
                 foreach (var kv in customFields) payload[kv.Key] = kv.Value;
                 foreach (var item in hwList) payload[item.Key] = item.Value;
                 if (swList != null && swList.Count > 0) payload["software_list"] = swList;
 
-                // 塞入本地离线队列
                 EnqueuePayload(payload);
 
-                // 立即触发一次同步
                 Task.Run(() => FlushQueueSequentialAsync());
             }
             catch { }
         }
 
-        // ========== 【新增】本地离线队列加解密与存储管理 ==========
         private List<Dictionary<string, object>> LoadQueue()
         {
             lock (syncLock)
@@ -109,7 +100,6 @@ namespace AssetCollector
                         string base64 = File.ReadAllText(queueFilePath, Encoding.UTF8);
                         if (!string.IsNullOrEmpty(base64))
                         {
-                            // 混淆防篡改解码
                             string json = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
                             return JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(json) ?? new List<Dictionary<string, object>>();
                         }
@@ -127,7 +117,6 @@ namespace AssetCollector
                 try
                 {
                     string json = JsonConvert.SerializeObject(queue);
-                    // 混淆加密成 Base64
                     string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
                     File.WriteAllText(queueFilePath, base64, Encoding.UTF8);
                 }
@@ -138,7 +127,6 @@ namespace AssetCollector
         private void EnqueuePayload(Dictionary<string, object> payload)
         {
             var queue = LoadQueue();
-            // 防止队列里囤积太多相同数据，如果超过20条限制一下，防止写爆硬盘
             if (queue.Count > 20) queue.RemoveAt(0);
 
             queue.Add(payload);
@@ -146,23 +134,18 @@ namespace AssetCollector
             UpdateStatusText($"本地已缓存 1 条数据");
         }
 
-        // ========== 【新增】断网自动重传与依次排队模块 ==========
         private void InitializeSyncTimer()
         {
-            // 每隔 2 分钟 (120000 毫秒) 触发一次后台队列同步
             syncTimer = new Timer(120000);
             syncTimer.Elapsed += async (s, e) => await FlushQueueSequentialAsync();
             syncTimer.AutoReset = true;
             syncTimer.Start();
 
-            // 软件启动时，立即进行一次同步尝试
             Task.Run(() => FlushQueueSequentialAsync());
         }
 
-        // 依次、顺序重传逻辑
         private async Task FlushQueueSequentialAsync()
         {
-            // 防止并发冲突
             lock (syncLock)
             {
                 if (isSyncing) return;
@@ -185,24 +168,20 @@ namespace AssetCollector
                     var item = queue[0];
                     string serverUrl = item.ContainsKey("server_url") ? item["server_url"].ToString() : TxtServerUrl.Text;
 
-                    // 核心尝试上报方法
                     bool isSuccess = await UploadSinglePayloadAsync(serverUrl, item);
 
                     if (isSuccess)
                     {
-                        // 成功上报一个，擦除一个
                         queue.RemoveAt(0);
                         SaveQueue(queue);
                         UpdateStatusText($"同步成功 | 剩余缓存: {queue.Count} 个");
                     }
                     else
                     {
-                        // 一旦失败，说明服务器依然不通，暂停上报，等待下一次定时器触发
                         UpdateStatusText($"服务器不在线，队列已妥善暂存 | 剩余: {queue.Count} 个");
                         break;
                     }
 
-                    // 需求 5：依次排队重传，每个数据包上传间隔 1.5 秒，严防高并发瞬间冲垮服务器
                     await Task.Delay(1500);
                 }
             }
@@ -216,7 +195,6 @@ namespace AssetCollector
             }
         }
 
-        // 底层的网络发送，绝不抛出异常，保持客户端极度平稳
         private async Task<bool> UploadSinglePayloadAsync(string baseUrl, Dictionary<string, object> payload)
         {
             try
@@ -230,7 +208,6 @@ namespace AssetCollector
             }
             catch
             {
-                // 网络不通、超时、服务端关机，不抛错，静默返回 false
                 return false;
             }
         }
@@ -239,7 +216,6 @@ namespace AssetCollector
         {
             Dispatcher.Invoke(() =>
             {
-                // 如果本地有积压的数据，在状态栏明确展现，方便IT人员知晓
                 var queue = LoadQueue();
                 if (queue.Count > 0)
                 {
@@ -252,7 +228,6 @@ namespace AssetCollector
             });
         }
 
-        // ========== 主界面 UI 触发的常规上传 ==========
         private async void BtnUpload_Click(object sender, RoutedEventArgs e)
         {
             BtnUpload.IsEnabled = false;
@@ -262,10 +237,7 @@ namespace AssetCollector
             try
             {
                 var payload = BuildPayload();
-                // 1. 先把当前数据塞进本地队列（确保哪怕断电数据都在）
                 await Task.Run(() => EnqueuePayload(payload));
-
-                // 2. 触发依次排队上传
                 await Task.Run(() => FlushQueueSequentialAsync());
 
                 MessageBox.Show("数据已成功入队！如果网络畅通，数据已安全发送；如果网络不通，数据已安全保存在本地，联网后会自动重传。", 
@@ -282,7 +254,6 @@ namespace AssetCollector
             }
         }
 
-        // ========== 以下为托盘、密码和安全控制系统 (保持稳定) ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();
@@ -536,7 +507,6 @@ namespace AssetCollector
             SaveConfig();
         }
 
-        // ========== 扫描硬件动作 ==========
         private async void BtnScan_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -581,7 +551,6 @@ namespace AssetCollector
             return list;
         }
 
-        // ========== 2. 扫描软件动作 ==========
         private async void BtnScanSoftware_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -601,6 +570,44 @@ namespace AssetCollector
 
             await Task.Delay(2000);
             ProgBar.Visibility = Visibility.Hidden;
+        }
+
+        private void LockUI(bool isLocked)
+        {
+            if (isLocked)
+            {
+                BtnScan.IsEnabled = false; BtnScanSoftware.IsEnabled = false;
+                BtnUpload.IsEnabled = false; BtnExport.IsEnabled = false;
+            }
+            else
+            {
+                BtnScan.IsEnabled = true; BtnScanSoftware.IsEnabled = true;
+                BtnUpload.IsEnabled = true; BtnExport.IsEnabled = true;
+            }
+        }
+
+        private void UpdateProgress(int percent, string message)
+        {
+            Dispatcher.Invoke(() => { ProgBar.Value = percent; TxtStatus.Text = message; });
+        }
+
+        private Dictionary<string, object> BuildPayload()
+        {
+            var payload = new Dictionary<string, object>();
+            payload["server_url"] = TxtServerUrl.Text.Trim();
+            payload["building"] = TxtBuilding.Text.Trim();
+            payload["floor"] = TxtFloor.Text.Trim();
+            payload["department"] = TxtDept.Text.Trim();
+            payload["type"] = TxtAssetType.Text.Trim();
+
+            foreach (var kv in customFields) payload[kv.Key] = kv.Value;
+            foreach (var item in currentResults) payload[item.Key] = item.Value;
+            
+            if (currentSoftwareResults != null && currentSoftwareResults.Count > 0)
+            {
+                payload["software_list"] = currentSoftwareResults;
+            }
+            return payload;
         }
 
         private async void BtnExport_Click(object sender, RoutedEventArgs e)
@@ -684,5 +691,12 @@ namespace AssetCollector
                 "4. 异常防御：服务端断网、宕机、客户端断电，软件均能完美包容并自动在下次启动时恢复同步。",
                 "帮助说明 / 传输与离线缓存控制", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+    }
+
+    // 【核心新增】将丢失的 ResultItem 类牢牢定义在 namespace 底下
+    public class ResultItem
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
     }
 }

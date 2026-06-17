@@ -24,7 +24,6 @@ namespace AssetServer.Controllers
             _context = context;
         }
 
-        // 1. 获取所有资产台账 (支持基本搜索 & 穿透式已安装软件精确检索)
         [HttpGet("assets")]
         public async Task<IActionResult> GetAssets([FromQuery] string? search, [FromQuery] string? software)
         {
@@ -81,7 +80,6 @@ namespace AssetServer.Controllers
             return Ok(assets);
         }
 
-        // 2. 获取单台电脑的详细软件清单
         [HttpGet("assets/{mac}/software")]
         public async Task<IActionResult> GetAssetSoftware(string mac)
         {
@@ -93,7 +91,6 @@ namespace AssetServer.Controllers
             return Ok(software);
         }
 
-        // 3. 修改设备备注
         [HttpPut("assets/{mac}/remarks")]
         public async Task<IActionResult> UpdateRemarks(string mac, [FromBody] UpdateRemarksRequest req)
         {
@@ -114,7 +111,6 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 4. 修改设备分组
         [HttpPut("assets/{mac}/group")]
         public async Task<IActionResult> UpdateGroup(string mac, [FromBody] UpdateGroupRequest req)
         {
@@ -137,7 +133,6 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 4-2. 批量修改选中设备的分组 
         [HttpPut("assets/batch-group")]
         public async Task<IActionResult> BatchGroup([FromBody] BatchGroupRequest req)
         {
@@ -162,7 +157,6 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 5. 获取分组及规则列表
         [HttpGet("groups")]
         public async Task<IActionResult> GetGroups()
         {
@@ -170,7 +164,6 @@ namespace AssetServer.Controllers
             return Ok(groups);
         }
 
-        // 6. 新增分组
         [HttpPost("groups")]
         public async Task<IActionResult> CreateGroup([FromBody] Group req)
         {
@@ -179,7 +172,7 @@ namespace AssetServer.Controllers
             _context.Groups.Add(req);
             await _context.SaveChangesAsync();
 
-            var policy = new Policy { GroupId = req.Id, CollectHardware = true, CollectSoftware = true, ScanIntervalMinutes = 120 };
+            var policy = new Policy { GroupId = req.Id, CollectHardware = true, CollectSoftware = true, ScanIntervalMinutes = 120, Version = 1 };
             _context.Policies.Add(policy);
 
             _context.SystemLogs.Add(new SystemLog
@@ -193,7 +186,39 @@ namespace AssetServer.Controllers
             return Ok(req);
         }
 
-        // 7. 更新分组规则
+        // 【新增】删除分组接口 (主管理员分组不可删，删除后原设备自动降为“未分配”)
+        [HttpDelete("groups/{id}")]
+        public async Task<IActionResult> DeleteGroup(int id)
+        {
+            var group = await _context.Groups.FindAsync(id);
+            if (group == null) return NotFound();
+
+            if (id == 1 || group.Name == "默认分组")
+            {
+                return BadRequest("系统保护：默认主分组无法被删除！");
+            }
+
+            // 将归属这个组的所有电脑自动打回“未分配”状态
+            var boundAssets = await _context.Assets.Where(a => a.GroupId == id).ToListAsync();
+            foreach (var a in boundAssets)
+            {
+                a.GroupId = null;
+            }
+
+            _context.Groups.Remove(group);
+
+            _context.SystemLogs.Add(new SystemLog
+            {
+                Level = "Warning",
+                Message = $"注销了终端分组：[{group.Name}]",
+                Details = $"共释放了该分组下的 {boundAssets.Count} 台设备归入未分配。"
+            });
+
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
+        // 更新分组规则 (版本号递增)
         [HttpPut("groups/{id}/policy")]
         public async Task<IActionResult> UpdatePolicy(int id, [FromBody] Policy req)
         {
@@ -203,20 +228,43 @@ namespace AssetServer.Controllers
             policy.CollectHardware = req.CollectHardware;
             policy.CollectSoftware = req.CollectSoftware;
             policy.ScanIntervalMinutes = req.ScanIntervalMinutes;
+            
+            // 【策略控制：递增版本】只要管理员修改了策略规则，版本号加1，通知该组下所有休眠的客户端惊醒更新！
+            policy.Version++;
 
             var group = await _context.Groups.FindAsync(id);
             _context.SystemLogs.Add(new SystemLog
             {
                 Level = "Warning",
                 Message = $"分组采集策略变更：[{group?.Name}]",
-                Details = $"采集硬件: {req.CollectHardware} | 采集软件: {req.CollectSoftware} | 周期: {req.ScanIntervalMinutes}分钟"
+                Details = $"采集硬件: {req.CollectHardware} | 采集软件: {req.CollectSoftware} | 周期: {req.ScanIntervalMinutes}分钟 | 策略版本升级至: {policy.Version}"
             });
 
             await _context.SaveChangesAsync();
             return Ok();
         }
 
-        // 8. 获取系统安全日志
+        // 【新增】一键强制全组重新采集一次
+        [HttpPost("groups/{id}/trigger-scan")]
+        public async Task<IActionResult> TriggerScan(int id)
+        {
+            var policy = await _context.Policies.FirstOrDefaultAsync(p => p.GroupId == id);
+            if (policy == null) return NotFound();
+
+            policy.Version++; // 提升版本，激醒客户端
+
+            var group = await _context.Groups.FindAsync(id);
+            _context.SystemLogs.Add(new SystemLog
+            {
+                Level = "Warning",
+                Message = $"全网强制指令：下发 [{group?.Name}] 分组重新采集上报一次",
+                Details = $"策略版本递增至: {policy.Version}"
+            });
+
+            await _context.SaveChangesAsync();
+            return Ok(new { version = policy.Version });
+        }
+
         [HttpGet("logs")]
         public async Task<IActionResult> GetLogs()
         {
@@ -227,7 +275,6 @@ namespace AssetServer.Controllers
             return Ok(logs);
         }
 
-        // 【高阶重构】支持根据 target 参数（all, hardware, software）动态裁切工作簿生成
         [HttpGet("export")]
         public async Task<IActionResult> ExportExcel([FromQuery] string? macs, [FromQuery] string? target)
         {
@@ -248,7 +295,6 @@ namespace AssetServer.Controllers
 
             using (var workbook = new XLWorkbook())
             {
-                // 1. 如果需要导出硬件 (all 或 hardware)
                 if (exportType == "all" || exportType == "hardware")
                 {
                     var ws1 = workbook.Worksheets.Add("全网资产台账");
@@ -286,7 +332,6 @@ namespace AssetServer.Controllers
                     ws1.Columns().AdjustToContents();
                 }
 
-                // 2. 如果需要导出软件 (all 或 software)
                 if (exportType == "all" || exportType == "software")
                 {
                     var ws2 = workbook.Worksheets.Add("全网软件清单明细");
@@ -364,7 +409,7 @@ namespace AssetServer.Controllers
             if (user == null) return NotFound();
 
             _context.Users.Remove(user);
-            _context.SystemLogs.Add(new SystemLog { Level = "Warning", Message = $"删除了登录子账号: [{username}]" });
+            _context.SystemLogs.Add(new SystemLog { Level = "Warning", Message = $"删了登录子账号: [{username}]" });
             await _context.SaveChangesAsync();
             return Ok();
         }

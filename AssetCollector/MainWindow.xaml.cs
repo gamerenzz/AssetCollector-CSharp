@@ -15,7 +15,6 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 本地全局策略静态内存，用于遵从服务器规则
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
@@ -37,7 +36,9 @@ namespace AssetCollector
 
         private System.Windows.Forms.NotifyIcon trayIcon;
         private bool isForceExit = false; 
-        private const string ExitPasswordHash = "admin123"; 
+        
+        // 【安全重构】默认退出密码从配置文件动态读取，默认还是 admin123
+        private string ExitPassword = "admin123"; 
 
         private Timer syncTimer;
         private static readonly object syncLock = new object();
@@ -72,7 +73,6 @@ namespace AssetCollector
             }
         }
 
-        // 遵从服务端下发策略进行静默扫描
         private void PerformSilentScanAndEnqueue()
         {
             try
@@ -80,13 +80,11 @@ namespace AssetCollector
                 var hwList = new List<ResultItem>();
                 var swList = new List<SoftwareItem>();
 
-                // 遵从服务端策略
                 if (CurrentPolicy.CollectHardware)
                 {
                     hwList = PerformScanHardware();
                 }
 
-                // 遵从服务端策略
                 if (CurrentPolicy.CollectSoftware)
                 {
                     swList = HardwareCollector.GetInstalledSoftwareList();
@@ -174,7 +172,6 @@ namespace AssetCollector
             });
         }
 
-        // 向服务端拉取策略规则并动态修改本地定时器周期
         private async Task SyncPolicyFromServerAsync()
         {
             try
@@ -384,7 +381,7 @@ namespace AssetCollector
 
         private void BtnConfirmExit_Click(object sender, RoutedEventArgs e)
         {
-            if (TxtExitPassword.Password == ExitPasswordHash)
+            if (TxtExitPassword.Password == ExitPassword) // 使用动态加载的本地密码
             {
                 isForceExit = true; 
                 PasswordOverlay.Visibility = Visibility.Collapsed;
@@ -414,6 +411,73 @@ namespace AssetCollector
         {
             PasswordOverlay.Visibility = Visibility.Collapsed;
             TxtExitPassword.Clear();
+        }
+
+        // ========== 【新增】客户端修改退出安全密码功能 ==========
+        private void BtnChangeExitPassword_Click(object sender, RoutedEventArgs e)
+        {
+            Window dialog = new Window { Title = "修改客户端安全退出密码", Width = 320, Height = 210, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this, ResizeMode = ResizeMode.NoResize, Background = System.Windows.Media.Brushes.White, FontFamily = this.FontFamily };
+            Grid grid = new Grid { Margin = new Thickness(15) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // 原密码
+            StackPanel sp1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            sp1.Children.Add(new Label { Content = "旧密码:", Width = 70 });
+            PasswordBox txtOld = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp1.Children.Add(txtOld);
+            Grid.SetRow(sp1, 0);
+
+            // 新密码
+            StackPanel sp2 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            sp2.Children.Add(new Label { Content = "新密码:", Width = 70 });
+            PasswordBox txtNew = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp2.Children.Add(txtNew);
+            Grid.SetRow(sp2, 1);
+
+            // 确认新密码
+            StackPanel sp3 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 15) };
+            sp3.Children.Add(new Label { Content = "重复新密码:", Width = 70 });
+            PasswordBox txtConfirm = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp3.Children.Add(txtConfirm);
+            Grid.SetRow(sp3, 2);
+
+            StackPanel sp4 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            Button btnOk = new Button { Content = "确认修改", Width = 80, Height = 25, IsDefault = true, Margin = new Thickness(0, 0, 10, 0) };
+            Button btnCancel = new Button { Content = "取消", Width = 70, Height = 25, IsCancel = true };
+            sp4.Children.Add(btnOk); sp4.Children.Add(btnCancel);
+            Grid.SetRow(sp4, 3);
+
+            grid.Children.Add(sp1); grid.Children.Add(sp2); grid.Children.Add(sp3); grid.Children.Add(sp4);
+            dialog.Content = grid;
+
+            btnOk.Click += (o, a) =>
+            {
+                if (txtOld.Password != ExitPassword)
+                {
+                    MessageBox.Show("旧密码验证不正确！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (string.IsNullOrEmpty(txtNew.Password))
+                {
+                    MessageBox.Show("新密码不能为空！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (txtNew.Password != txtConfirm.Password)
+                {
+                    MessageBox.Show("两次输入的新密码不一致！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                ExitPassword = txtNew.Password; // 更新内存密码
+                SaveConfig(); // 保存至 config.json
+                MessageBox.Show("客户端安全退出密码修改成功！并已安全保存在本地。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                dialog.DialogResult = true;
+            };
+
+            dialog.ShowDialog();
         }
 
         private void CheckAutoStartStatus()
@@ -476,6 +540,9 @@ namespace AssetCollector
                         if (cfg.ContainsKey("window_height")) this.Height = Convert.ToDouble(cfg["window_height"]);
                         if (cfg.ContainsKey("window_top")) this.Top = Convert.ToDouble(cfg["window_top"]);
                         if (cfg.ContainsKey("window_left")) this.Left = Convert.ToDouble(cfg["window_left"]);
+                        
+                        // 【安全重构】自 config.json 加载安全退出密码
+                        if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
 
                         if (cfg.ContainsKey("custom_fields"))
                         {
@@ -507,6 +574,7 @@ namespace AssetCollector
                     { "window_height", this.ActualHeight },
                     { "window_top", this.Top },
                     { "window_left", this.Left },
+                    { "exit_password", ExitPassword }, // 保存安全退出密码到本地
                     { "custom_fields", JsonConvert.SerializeObject(customFields) }
                 };
                 File.WriteAllText(configFilePath, JsonConvert.SerializeObject(cfg, Formatting.Indented), Encoding.UTF8);
@@ -767,7 +835,6 @@ namespace AssetCollector
         }
     }
 
-    // 【修正：完美闭合定义在命名空间最底部的实体类】
     public class ResultItem
     {
         public string Key { get; set; }

@@ -9,7 +9,7 @@ using Newtonsoft.Json;
 using Microsoft.Win32;
 using ClosedXML.Excel;
 using System.IO;
-using System.Drawing; // 引入托盘图标所需的绘图库
+using System.Drawing; 
 
 namespace AssetCollector
 {
@@ -23,20 +23,18 @@ namespace AssetCollector
         private bool isLoaded = false;
         private readonly Dictionary<string, string> customFields = new Dictionary<string, string>();
 
-        // 【新增】托盘与安全控制变量
         private System.Windows.Forms.NotifyIcon trayIcon;
-        private bool isForceExit = false; // 是否通过了密码验证，允许真正退出
-        private const string ExitPasswordHash = "admin123"; // 默认安全退出密码
+        private bool isForceExit = false; 
+        private const string ExitPasswordHash = "admin123"; 
 
-        // 构造函数，支持接收“是否默认隐藏”参数
+        // 构造函数
         public MainWindow(bool startMinimized)
         {
             InitializeComponent();
-            InitializeTrayIcon(); // 初始化系统托盘
+            InitializeTrayIcon(); 
             LoadConfig(); 
             isLoaded = true;
 
-            // 如果是开机自启参数运行，立刻隐藏到托盘
             if (startMinimized)
             {
                 this.WindowState = WindowState.Minimized;
@@ -44,37 +42,40 @@ namespace AssetCollector
                 this.ShowInTaskbar = false;
             }
             
-            CheckAutoStartStatus(); // 刷新开机自启复选框状态
+            CheckAutoStartStatus(); 
         }
 
-        // ========== UX Polish: 初始化系统托盘 ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();
-            // 直接获取 Windows 默认的系统图标，无需外挂图标文件，防止打包丢失
             trayIcon.Icon = SystemIcons.Shield; 
             trayIcon.Text = "终端资产管理平台";
             trayIcon.Visible = true;
 
-            // 托盘双击事件 -> 恢复并激活窗口
             trayIcon.DoubleClick += (s, e) => RestoreWindow();
 
-            // 创建托盘右键菜单
             var contextMenu = new System.Windows.Forms.ContextMenu();
             contextMenu.MenuItems.Add("打开主界面", (s, e) => RestoreWindow());
             contextMenu.MenuItems.Add("安全退出", (s, e) => TriggerExitWithPassword());
             trayIcon.ContextMenu = contextMenu;
         }
 
+        // 【安全修复】增加异常保护，防止在窗口正在关闭时抛出异常
         private void RestoreWindow()
         {
-            this.Show();
-            this.WindowState = WindowState.Normal;
-            this.ShowInTaskbar = true;
-            this.Activate();
+            try
+            {
+                if (this.IsActive == false || this.Visibility != Visibility.Visible)
+                {
+                    this.Show();
+                    this.WindowState = WindowState.Normal;
+                    this.ShowInTaskbar = true;
+                    this.Activate();
+                }
+            }
+            catch { }
         }
 
-        // 主窗口最小化时，自动缩到托盘并隐藏任务栏图标
         private void Window_StateChanged(object sender, EventArgs e)
         {
             if (this.WindowState == WindowState.Minimized)
@@ -84,37 +85,39 @@ namespace AssetCollector
             }
         }
 
-        // ========== 安全防护：拦截关闭事件并校验密码 ==========
+        // 安全防护拦截
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (!isForceExit)
             {
-                // 如果没有输入正确密码，拦截退出事件，展示密码验证遮罩
-                e.Cancel = true;
+                e.Cancel = true; // 拦截退出
                 TriggerExitWithPassword();
             }
         }
 
         private void TriggerExitWithPassword()
         {
-            RestoreWindow(); // 确保窗口拉回前台可见
+            RestoreWindow(); 
             PasswordOverlay.Visibility = Visibility.Visible;
             TxtExitPassword.Focus();
         }
 
+        // 【核心修复】确认退出时，使用 this.Close() 让窗口走完正常的生命周期自然退出，而不是粗暴 Shutdown
         private void BtnConfirmExit_Click(object sender, RoutedEventArgs e)
         {
             if (TxtExitPassword.Password == ExitPasswordHash)
             {
-                // 密码正确，解除关闭拦截锁，彻底退出
-                isForceExit = true;
+                isForceExit = true; // 允许退出标识
+                PasswordOverlay.Visibility = Visibility.Collapsed;
+                
                 if (trayIcon != null)
                 {
                     trayIcon.Visible = false;
                     trayIcon.Dispose();
                 }
+                
                 SaveConfig();
-                Application.Current.Shutdown();
+                this.Close(); // 触发主窗体自然关闭，程序将安全退出，绝不报错
             }
             else
             {
@@ -129,7 +132,6 @@ namespace AssetCollector
             TxtExitPassword.Clear();
         }
 
-        // ========== 自动自启写入 Windows 注册表 ==========
         private void CheckAutoStartStatus()
         {
             try
@@ -153,7 +155,6 @@ namespace AssetCollector
                 string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
                 {
-                    // 开机启动时传入 -startup 参数，实现默认隐藏在右下角
                     key.SetValue("TerminalAssetCollector", $"\"{exePath}\" -startup");
                 }
             }
@@ -172,7 +173,6 @@ namespace AssetCollector
             catch { }
         }
 
-        // ========== 本地配置与状态维护 ==========
         private void LoadConfig()
         {
             try
@@ -239,7 +239,6 @@ namespace AssetCollector
             SaveConfig();
         }
 
-        // ========== 动态字段 ==========
         private void BtnAddField_Click(object sender, RoutedEventArgs e)
         {
             Window dialog = new Window { Title = "新增自定义字段", Width = 320, Height = 180, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this, ResizeMode = ResizeMode.NoResize, Background = System.Windows.Media.Brushes.White, FontFamily = this.FontFamily };

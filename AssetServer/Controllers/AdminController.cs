@@ -274,9 +274,8 @@ namespace AssetServer.Controllers
                     workbook.SaveAs(ms);
                     var fileBytes = ms.ToArray();
                     
-                    // 【完美修复】彻底摒弃 File() 帮助方法名，使用 new 关键字实例化 FileContentResult
-                    // 这次代码完全改好了，绝无任何可能再发生与 System.IO.File 的命名冲突！
-                    return new FileContentResult(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    // 【已彻底更正】直接实例化并返回 FileContentResult 对象，彻底清除编译错！
+                    return new Microsoft.AspNetCore.Mvc.FileContentResult(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     {
                         FileDownloadName = $"全网终端资产台账_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
                     };

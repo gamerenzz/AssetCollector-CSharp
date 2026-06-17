@@ -2,11 +2,15 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
+using Newtonsoft.Json;
+using System.Security.Cryptography;
+using System.Text;
 
-namespace AssetServer.Controllers
+namespace AssetCollector.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
@@ -19,11 +23,33 @@ namespace AssetServer.Controllers
             _context = context;
         }
 
-        // 1. 获取所有资产台账 (含分组名称和软件统计数量)
+        // 1. 获取所有资产台账 (支持基本搜索 & 穿透式已安装软件精确检索)
         [HttpGet("assets")]
-        public async Task<IActionResult> GetAssets()
+        public async Task<IActionResult> GetAssets([FromQuery] string? search, [FromQuery] string? software)
         {
-            var assets = await _context.Assets
+            var query = _context.Assets.AsQueryable();
+
+            // 模糊搜索：主机名、IP、MAC、科室、楼号
+            if (!string.IsNullOrEmpty(search))
+            {
+                string s = search.ToLower();
+                query = query.Where(a => 
+                    a.Hostname.ToLower().Contains(s) || 
+                    a.IpAddress.ToLower().Contains(s) || 
+                    a.MacAddress.ToLower().Contains(s) || 
+                    a.Department.ToLower().Contains(s) || 
+                    a.Building.ToLower().Contains(s)
+                );
+            }
+
+            // 【核心新增】穿透搜索：查询安装了指定软件的电脑
+            if (!string.IsNullOrEmpty(software))
+            {
+                string s = software.ToLower();
+                query = query.Where(a => _context.SoftwareInfos.Any(sw => sw.AssetId == a.MacAddress && sw.Name.ToLower().Contains(s)));
+            }
+
+            var assets = await query
                 .Include(a => a.Group)
                 .Select(a => new
                 {
@@ -68,7 +94,7 @@ namespace AssetServer.Controllers
             return Ok(software);
         }
 
-        // 3. 修改设备备注 (需求 3)
+        // 3. 修改设备备注
         [HttpPut("assets/{mac}/remarks")]
         public async Task<IActionResult> UpdateRemarks(string mac, [FromBody] UpdateRemarksRequest req)
         {
@@ -89,7 +115,7 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 4. 修改设备分组 (需求 2)
+        // 4. 修改设备分组
         [HttpPut("assets/{mac}/group")]
         public async Task<IActionResult> UpdateGroup(string mac, [FromBody] UpdateGroupRequest req)
         {
@@ -112,7 +138,7 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 5. 获取分组及规则列表 (需求 4)
+        // 5. 获取分组及规则列表
         [HttpGet("groups")]
         public async Task<IActionResult> GetGroups()
         {
@@ -120,7 +146,7 @@ namespace AssetServer.Controllers
             return Ok(groups);
         }
 
-        // 6. 新增分组 (需求 2)
+        // 6. 新增分组
         [HttpPost("groups")]
         public async Task<IActionResult> CreateGroup([FromBody] Group req)
         {
@@ -129,7 +155,6 @@ namespace AssetServer.Controllers
             _context.Groups.Add(req);
             await _context.SaveChangesAsync();
 
-            // 为新分组自动生成一个默认规则策略
             var policy = new Policy { GroupId = req.Id, CollectHardware = true, CollectSoftware = true, ScanIntervalMinutes = 120 };
             _context.Policies.Add(policy);
 
@@ -144,7 +169,7 @@ namespace AssetServer.Controllers
             return Ok(req);
         }
 
-        // 7. 更新分组规则 (需求 4)
+        // 7. 更新分组规则
         [HttpPut("groups/{id}/policy")]
         public async Task<IActionResult> UpdatePolicy(int id, [FromBody] Policy req)
         {
@@ -167,18 +192,18 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 8. 获取系统安全日志 (需求 7)
+        // 8. 获取系统安全日志
         [HttpGet("logs")]
         public async Task<IActionResult> GetLogs()
         {
             var logs = await _context.SystemLogs
                 .OrderByDescending(l => l.Timestamp)
-                .Take(200) // 取最新的 200 条
+                .Take(200) 
                 .ToListAsync();
             return Ok(logs);
         }
 
-        // 9. 【双 Sheet 汇总导出】一键打包全网硬件台账与所有设备软件明细 (需求 6)
+        // 9. 一键打包导出全网台账 (双工作簿 Excel)
         [HttpGet("export")]
         public async Task<IActionResult> ExportExcel()
         {
@@ -187,7 +212,6 @@ namespace AssetServer.Controllers
 
             using (var workbook = new XLWorkbook())
             {
-                // Tab 页 1：全网资产台账汇总
                 var ws1 = workbook.Worksheets.Add("全网资产台账");
                 string[] headers1 = { "MAC地址", "计算机名称", "用户名", "IP地址", "所属分组", "操作系统", "处理器", "内存", "磁盘", "显卡", "外接显示器", "主板信息", "整机型号", "楼号", "楼层", "科室", "资产类型", "备注", "最后上报时间" };
                 for (int i = 0; i < headers1.Length; i++)
@@ -222,7 +246,6 @@ namespace AssetServer.Controllers
                 }
                 ws1.Columns().AdjustToContents();
 
-                // Tab 页 2：全网软件分布汇总表
                 var ws2 = workbook.Worksheets.Add("全网软件清单明细");
                 string[] headers2 = { "归属电脑名", "IP地址", "网卡MAC", "软件名称", "版本号", "安装日期" };
                 for (int i = 0; i < headers2.Length; i++)
@@ -253,8 +276,113 @@ namespace AssetServer.Controllers
                 }
             }
         }
+
+        // ========== 【新增】用户与子账户列表管理 ==========
+        [HttpGet("users")]
+        public async Task<IActionResult> GetUsers()
+        {
+            var users = await _context.Users
+                .Select(u => new { u.Username, u.Role })
+                .ToListAsync();
+            return Ok(users);
+        }
+
+        [HttpPost("users")]
+        public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
+        {
+            if (string.IsNullOrEmpty(req.Username) || string.IsNullOrEmpty(req.Password))
+                return BadRequest("Username and Password are required.");
+
+            var exists = await _context.Users.AnyAsync(u => u.Username == req.Username);
+            if (exists) return BadRequest("用户已存在！");
+
+            using var sha256 = SHA256.Create();
+            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(req.Password));
+            string passwordHash = BitConverter.ToString(hashedBytes).Replace("-", "").ToLower();
+
+            var newUser = new User { Username = req.Username, PasswordHash = passwordHash, Role = "User" };
+            _context.Users.Add(newUser);
+
+            _context.SystemLogs.Add(new SystemLog { Level = "Warning", Message = $"新建后台登录子账号: [{req.Username}]" });
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
+        [HttpDelete("users/{username}")]
+        public async Task<IActionResult> DeleteUser(string username)
+        {
+            if (username.ToLower() == "admin") return BadRequest("无法删除系统主管理员账户！");
+
+            var user = await _context.Users.FindAsync(username);
+            if (user == null) return NotFound();
+
+            _context.Users.Remove(user);
+            _context.SystemLogs.Add(new SystemLog { Level = "Warning", Message = $"删除了登录子账号: [{username}]" });
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
+        [HttpPut("users/password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
+        {
+            if (string.IsNullOrEmpty(req.Username) || string.IsNullOrEmpty(req.NewPassword))
+                return BadRequest("参数错误");
+
+            var user = await _context.Users.FindAsync(req.Username);
+            if (user == null) return NotFound();
+
+            using var sha256 = SHA256.Create();
+            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(req.NewPassword));
+            string passwordHash = BitConverter.ToString(hashedBytes).Replace("-", "").ToLower();
+
+            user.PasswordHash = passwordHash;
+            _context.SystemLogs.Add(new SystemLog { Level = "Warning", Message = $"用户 [{req.Username}] 在线修改了登录密码。" });
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
+        // ========== 【新增】修改监听服务端口并保存至 appsettings.json ==========
+        [HttpPost("settings/port")]
+        public async Task<IActionResult> UpdatePort([FromBody] PortRequest req)
+        {
+            if (req.Port < 1024 || req.Port > 65535) return BadRequest("端口范围错误 (1024 ~ 65535)");
+
+            try
+            {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+                if (File.Exists(path))
+                {
+                    string json = await File.ReadAllTextAsync(path, Encoding.UTF8);
+                    // 读出原始 json 对象
+                    var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(json) ?? new Dictionary<string, object>();
+                    
+                    // 修改或新增端口配置
+                    configDict["ServerPort"] = req.Port.ToString();
+
+                    // 写回
+                    await File.WriteAllTextAsync(path, JsonConvert.SerializeObject(configDict, Formatting.Indented), Encoding.UTF8);
+
+                    _context.SystemLogs.Add(new SystemLog
+                    {
+                        Level = "Warning",
+                        Message = $"修改服务运行端口为: {req.Port}",
+                        Details = "写入 appsettings.json 成功。由于需要重新绑定物理网卡监听，请手动重启服务端 exe 以生效。"
+                    });
+                    await _context.SaveChangesAsync();
+                    return Ok();
+                }
+                return NotFound("appsettings.json 丢失，无法在线更改。");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
     }
 
     public class UpdateRemarksRequest { public string Remarks { get; set; } = string.Empty; }
     public class UpdateGroupRequest { public int GroupId { get; set; } }
+    public class CreateUserRequest { public string Username { get; set; } = string.Empty; public string Password { get; set; } = string.Empty; }
+    public class ChangePasswordRequest { public string Username { get; set; } = string.Empty; public string NewPassword { get; set; } = string.Empty; }
+    public class PortRequest { public int Port { get; set; } }
 }

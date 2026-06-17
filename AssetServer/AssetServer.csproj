@@ -14,8 +14,9 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <!-- 【核心补漏】引入服务端生成 Excel 账簿所需的 ClosedXML 依赖 -->
     <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <!-- 【核心新增】引入 Newtonsoft.Json 解决服务端的编译报错 -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
 </Project>

@@ -11,11 +11,11 @@ using ClosedXML.Excel;
 using System.IO;
 using System.Drawing;
 using System.Timers;
-using System.Linq; // 引入 Linq 进行数据处理
+using System.Linq; 
 
 namespace AssetCollector
 {
-    // 【新增】本地全局策略静态内存，用于遵从服务器规则
+    // 本地全局策略静态内存，用于遵从服务器规则
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
@@ -72,7 +72,7 @@ namespace AssetCollector
             }
         }
 
-        // 【安全升级】遵从服务端下发策略进行静默扫描
+        // 遵从服务端下发策略进行静默扫描
         private void PerformSilentScanAndEnqueue()
         {
             try
@@ -80,13 +80,13 @@ namespace AssetCollector
                 var hwList = new List<ResultItem>();
                 var swList = new List<SoftwareItem>();
 
-                // 遵从服务端策略：如果服务端在后台规则里关掉了“硬件采集”，此处则跳过扫描
+                // 遵从服务端策略
                 if (CurrentPolicy.CollectHardware)
                 {
                     hwList = PerformScanHardware();
                 }
 
-                // 遵从服务端策略：如果服务端关掉了“软件扫描”，此处直接跳过
+                // 遵从服务端策略
                 if (CurrentPolicy.CollectSoftware)
                 {
                     swList = HardwareCollector.GetInstalledSoftwareList();
@@ -158,18 +158,15 @@ namespace AssetCollector
 
         private void InitializeSyncTimer()
         {
-            // 初始以 2 分钟为轮询间隔
             syncTimer = new Timer(120000);
-            // 每次定时器触发：先尝试向服务器发送心跳包拉取策略，再做依次排队重传
             syncTimer.Elapsed += async (s, e) =>
             {
-                await SyncPolicyFromServerAsync(); // 1. 同步策略并调整定时器周期
-                await FlushQueueSequentialAsync(); // 2. 同步离线队列
+                await SyncPolicyFromServerAsync(); 
+                await FlushQueueSequentialAsync(); 
             };
             syncTimer.AutoReset = true;
             syncTimer.Start();
 
-            // 软件启动时，立即触发一次策略同步与上报
             Task.Run(async () =>
             {
                 await SyncPolicyFromServerAsync();
@@ -177,7 +174,7 @@ namespace AssetCollector
             });
         }
 
-        // ========== 【核心新增】向服务端拉取策略规则并动态修改本地定时器周期 ==========
+        // 向服务端拉取策略规则并动态修改本地定时器周期
         private async Task SyncPolicyFromServerAsync()
         {
             try
@@ -185,7 +182,6 @@ namespace AssetCollector
                 var netInfo = HardwareCollector.GetNetworkInfo();
                 string primaryMac = netInfo.MAC;
                 
-                // 拆分多网卡情况，取第一个网卡的 MAC 标识作为心跳 Key
                 if (primaryMac.Contains("|")) primaryMac = primaryMac.Split('|')[0].Trim();
                 if (primaryMac.Contains(":")) primaryMac = primaryMac.Split(':')[1].Trim();
 
@@ -203,26 +199,24 @@ namespace AssetCollector
                     var policy = JsonConvert.DeserializeObject<Dictionary<string, object>>(resBody);
                     if (policy != null)
                     {
-                        // 1. 读取并缓存在内存中
                         CurrentPolicy.CollectHardware = Convert.ToBoolean(policy["collect_hardware"]);
                         CurrentPolicy.CollectSoftware = Convert.ToBoolean(policy["collect_software"]);
                         CurrentPolicy.ScanIntervalMinutes = Convert.ToInt32(policy["scan_interval_minutes"]);
 
-                        // 2. 动态调整本地定时器的触发周期 (UX Polish / Centralized Control)
                         double intervalMs = CurrentPolicy.ScanIntervalMinutes * 60.0 * 1000.0;
-                        if (intervalMs < 10000) intervalMs = 120000; // 限制最小上报安全周期为2分钟，防止死循环击穿服务器
+                        if (intervalMs < 10000) intervalMs = 120000; 
 
                         Dispatcher.Invoke(() =>
                         {
                             if (Math.Abs(syncTimer.Interval - intervalMs) > 100)
                             {
-                                syncTimer.Interval = intervalMs; // 动态变更轮询时间
+                                syncTimer.Interval = intervalMs; 
                             }
                         });
                     }
                 }
             }
-            catch { } // 服务端宕机或离线，不引发任何异常，保持完全静默
+            catch { } 
         }
 
         private async Task FlushQueueSequentialAsync()
@@ -334,7 +328,6 @@ namespace AssetCollector
             }
         }
 
-        // ========== 以下为托盘、密码和安全控制系统 (保持稳定) ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();
@@ -759,5 +752,25 @@ namespace AssetCollector
                 finally { BtnExport.Content = "导出数据 (Excel)"; BtnExport.IsEnabled = true; }
             }
         }
+
+        private void BtnHelp_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show(
+                "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
+                "开发人员：Tonekey2016\n\n" +
+                "【第二阶段升级】核心传输特性：\n" +
+                "1. 本地离线缓存：网络不通时，数据混淆保存在 exe 旁的 queue.dat 中，绝不丢失。\n" +
+                "2. 开机静默扫描：当设置了位置信息，开机自启时自动静默进行硬件扫描并排队入库，对用户无干扰。\n" +
+                "3. 依次排队上报：一旦检测到网络通畅，本地积压的包会以 1.5 秒的间隔依次发送，防止击穿服务器。\n" +
+                "4. 异常防御：服务端断网、宕机、客户端断电，软件均能完美包容并自动在下次启动时恢复同步。",
+                "帮助说明 / 传输与离线缓存控制", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    // 【修正：完美闭合定义在命名空间最底部的实体类】
+    public class ResultItem
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
     }
 }

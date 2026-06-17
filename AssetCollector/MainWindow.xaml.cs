@@ -15,42 +15,12 @@ using System.Linq;
 
 namespace AssetCollector
 {
+    // 全局策略类 (保留在这个文件中)
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
         public static int ScanIntervalMinutes = 120;
-    }
-
-    public static class DebugLogger
-    {
-        private static readonly object logLock = new object();
-        public static readonly List<string> Logs = new List<string>();
-        public static Action<string> OnLogAdded;
-
-        public static void Log(string level, string message, Exception ex = null)
-        {
-            string time = DateTime.Now.ToString("HH:mm:ss");
-            string line = $"[{time}] [{level}] {message}";
-            if (ex != null)
-            {
-                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
-            }
-
-            lock (logLock)
-            {
-                Logs.Add(line);
-                if (Logs.Count > 200) Logs.RemoveAt(0); 
-            }
-
-            OnLogAdded?.Invoke(line);
-        }
-    }
-
-    public class ResultItem
-    {
-        public string Key { get; set; }
-        public string Value { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -245,7 +215,7 @@ namespace AssetCollector
                     return;
                 }
 
-                // 【核心修复】安全地跨线程读取服务器地址文本框
+                // 【核心修复】安全跨线程读取 UI
                 string serverUrl = "";
                 Dispatcher.Invoke(() => { serverUrl = TxtServerUrl.Text.Trim().TrimEnd('/'); });
 

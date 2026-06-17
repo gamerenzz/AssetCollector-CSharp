@@ -3,35 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <title>终端资产管理平台 - 控制台</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 【修正】改用打包在本地的运行库，支持 100% 纯内网离线运行 -->
+    <script src="/tailwind.js"></script>
+    <script src="/vue.global.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen font-sans">
     <div id="app" class="flex min-h-screen">
         <!-- 1. 左侧现代侧边栏 -->
         <div class="w-64 bg-slate-900 text-white flex flex-col shadow-lg">
             <div class="p-6 border-b border-slate-800">
-                <h1 class="text-xl font-bold tracking-wider"><i class="fa-solid fa-shield-halved text-indigo-400 mr-2"></i>资产管理后台</h1>
+                <h1 class="text-xl font-bold tracking-wider">🛡️ 资产管理后台</h1>
                 <p class="text-xs text-slate-500 mt-1">Hello, {{ currentUser }}</p>
             </div>
             <nav class="flex-1 p-4 space-y-2">
-                <button @click="currentTab = 'assets'" :class="currentTab === 'assets' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
-                    <i class="fa-solid fa-desktop w-6"></i> 资产台账看板
+                <button @click="currentTab = 'assets'" :class="currentTab === 'assets' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
+                    <span class="text-lg mr-3">💻</span> 资产台账看板
                 </button>
-                <button @click="currentTab = 'groups'" :class="currentTab === 'groups' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
-                    <i class="fa-solid fa-tags w-6"></i> 分组与规则策略
+                <button @click="currentTab = 'groups'" :class="currentTab === 'groups' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
+                    <span class="text-lg mr-3">🏷️</span> 分组与规则策略
                 </button>
-                <button @click="currentTab = 'logs'" :class="currentTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
-                    <i class="fa-solid fa-receipt w-6"></i> 系统审计日志
+                <button @click="currentTab = 'logs'" :class="currentTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
+                    <span class="text-lg mr-3">📋</span> 系统审计日志
                 </button>
-                <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
-                    <i class="fa-solid fa-gears w-6"></i> 后台系统设置
+                <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
+                    <span class="text-lg mr-3">⚙️</span> 后台系统设置
                 </button>
             </nav>
             <div class="p-4 border-t border-slate-800">
-                <button @click="handleLogout" class="w-full flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm">
-                    <i class="fa-solid fa-sign-out-alt mr-2"></i> 安全登出
+                <button @click="handleLogout" class="w-full flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm font-bold">
+                    🚪 安全登出
                 </button>
             </div>
         </div>
@@ -45,18 +45,18 @@
                 <!-- 顶部多功能搜索引擎 -->
                 <div v-if="currentTab === 'assets'" class="flex space-x-3 items-center">
                     <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">🔍</span>
                         <input type="text" v-model="searchQuery" @input="fetchAssets" class="pl-9 pr-4 py-1.5 w-56 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="搜索 主机/IP/MAC/科室...">
                     </div>
                     <div class="relative">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-emerald-500"><i class="fa-solid fa-cube text-xs"></i></span>
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-emerald-500">📦</span>
                         <input type="text" v-model="softwareQuery" @input="fetchAssets" class="pl-9 pr-4 py-1.5 w-56 border border-emerald-300 rounded-lg text-sm bg-emerald-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500" placeholder="穿透检索已安装软件...">
                     </div>
                 </div>
 
                 <div class="flex items-center space-x-4">
-                    <button @click="exportExcel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition shadow">
-                        <i class="fa-solid fa-file-excel mr-2"></i>一键导出全网台账 (Excel)
+                    <button @click="exportExcel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition shadow font-bold">
+                        📊 一键导出全网台账 (Excel)
                     </button>
                 </div>
             </header>
@@ -73,14 +73,14 @@
                                 <p class="text-xs font-bold text-gray-400 uppercase">管理资产总数</p>
                                 <p class="text-2xl font-bold text-gray-700 mt-1">{{ assets.length }} 台</p>
                             </div>
-                            <i class="fa-solid fa-server text-3xl text-indigo-300"></i>
+                            <span class="text-3xl">💻</span>
                         </div>
                         <div class="bg-white p-6 rounded-xl shadow border-l-4 border-emerald-500 flex items-center justify-between">
                             <div>
                                 <p class="text-xs font-bold text-gray-400 uppercase">当前上报软件总数</p>
                                 <p class="text-2xl font-bold text-gray-700 mt-1">{{ softwareCountSum }} 个</p>
                             </div>
-                            <i class="fa-solid fa-box text-3xl text-emerald-300"></i>
+                            <span class="text-3xl">📦</span>
                         </div>
                     </div>
 
@@ -125,11 +125,11 @@
                                     <td class="px-6 py-4 text-gray-600">
                                         <span v-if="a.Remarks">{{ a.Remarks }}</span>
                                         <span v-else class="text-gray-300 italic">暂无备注</span>
-                                        <button @click="openRemarksModal(a)" class="text-indigo-600 hover:text-indigo-900 ml-2"><i class="fa-solid fa-pen-to-square"></i></button>
+                                        <button @click="openRemarksModal(a)" class="text-indigo-600 hover:text-indigo-900 ml-2">✏️</button>
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <button @click="openDetailModal(a)" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold transition">
-                                            <i class="fa-solid fa-info-circle mr-1"></i> 资产综合详情
+                                            🔍 资产综合详情
                                         </button>
                                     </td>
                                 </tr>
@@ -143,7 +143,7 @@
                     <div class="flex justify-between items-center">
                         <div class="text-gray-500 text-sm">创建分组后，您可以为不同的分组下发不同的客户端上报策略。</div>
                         <button @click="openCreateGroupModal" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition shadow">
-                            <i class="fa-solid fa-plus mr-2"></i>新建终端分组
+                            ➕ 新建终端分组
                         </button>
                     </div>
 
@@ -191,7 +191,6 @@
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200 text-sm font-mono">
-                            <!-- 【修正】将 :key="l.Id" 改正为了 "log.Id"，彻底解除 JS 阻塞闪退崩溃 -->
                             <tr v-for="log in logs" :key="log.Id" class="hover:bg-gray-50">
                                 <td class="px-6 py-4 text-gray-500 text-xs">{{ formatDate(log.Timestamp) }}</td>
                                 <td class="px-6 py-4">
@@ -209,7 +208,7 @@
                 <!-- TAB 4: 后台系统设置 -->
                 <div v-if="currentTab === 'settings'" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
-                        <h3 class="text-lg font-bold text-gray-800 border-b pb-3"><i class="fa-solid fa-user-lock text-indigo-500 mr-2"></i>后台安全与账户管理</h3>
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-3">👤 后台安全与账户管理</h3>
                         <div class="space-y-3">
                             <h4 class="text-sm font-bold text-gray-600">修改我的密码</h4>
                             <div class="flex space-x-3">
@@ -239,7 +238,7 @@
                     </div>
 
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
-                        <h3 class="text-lg font-bold text-gray-800 border-b pb-3"><i class="fa-solid fa-network-wired text-indigo-500 mr-2"></i>服务绑定端口设置</h3>
+                        <h3 class="text-lg font-bold text-gray-800 border-b pb-3">🔌 服务绑定端口设置</h3>
                         <p class="text-xs text-gray-400">您可以自定义服务绑定的物理端口，修改后客户端也需要同步修改服务器地址。</p>
                         <div class="space-y-4">
                             <div class="flex items-center space-x-4">
@@ -247,7 +246,7 @@
                                 <input type="number" v-model="serverPort" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-center font-bold">
                             </div>
                             <button @click="savePortSetting" class="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow">保存并应用端口配置</button>
-                            <p class="text-xs text-red-500 font-bold bg-red-50 p-2.5 rounded border border-red-200"><i class="fa-solid fa-circle-exclamation mr-1"></i>注意：端口修改直接写入 appsettings.json。写入成功后，您需要手动关闭并重新双击打开服务端 exe，重新绑定物理端口才能生效。</p>
+                            <p class="text-xs text-red-500 font-bold bg-red-50 p-2.5 rounded border border-red-200">⚠️ 注意：端口修改直接写入 appsettings.json。写入成功后，您需要手动关闭并重新双击打开服务端 exe，重新绑定物理端口才能生效。</p>
                         </div>
                     </div>
                 </div>
@@ -260,7 +259,7 @@
             <div class="bg-white rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
                 <div class="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
                     <div>
-                        <h3 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-circle-info text-indigo-500 mr-2"></i>资产综合档案详情</h3>
+                        <h3 class="text-xl font-bold text-gray-800">ℹ️ 资产综合档案详情</h3>
                         <p class="text-xs text-gray-400 mt-1">电脑: {{ activeDetailAsset.Hostname }} | 用户: {{ activeDetailAsset.Username }} | MAC: {{ activeDetailAsset.MacAddress }}</p>
                     </div>
                     <button @click="activeDetailAsset = null" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>

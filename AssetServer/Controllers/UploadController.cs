@@ -23,14 +23,17 @@ namespace AssetServer.Controllers
         {
             try
             {
-                // 1. 解析 MAC 地址（作为主键）
-                if (!rawPayload.TryGetProperty("MAC地址", out var macProp) || string.IsNullOrEmpty(macProp.GetString()))
+                // 【核心修复】清洗接收到的 MAC 地址，剔除 "Ethernet0:" 前缀，保证与心跳主键绝对对齐！
+                string macAddress = "";
+                if (rawPayload.TryGetProperty("MAC地址", out var macProp) && !string.IsNullOrEmpty(macProp.GetString()))
                 {
-                    return BadRequest("Missing required MAC address.");
+                    macAddress = macProp.GetString()!;
+                    if (macAddress.Contains("|")) macAddress = macAddress.Split('|')[0].Trim();
+                    if (macAddress.Contains(":")) macAddress = macAddress.Split(':')[1].Trim();
                 }
-                string macAddress = macProp.GetString()!;
 
-                // 2. 检查此资产是否已在数据库中存在
+                if (string.IsNullOrEmpty(macAddress)) return BadRequest("Missing required MAC address.");
+
                 var asset = await _context.Assets
                     .Include(a => a.InstalledSoftware)
                     .FirstOrDefaultAsync(a => a.MacAddress == macAddress);
@@ -41,15 +44,10 @@ namespace AssetServer.Controllers
                     isNew = true;
                     asset = new Asset { MacAddress = macAddress };
                     
-                    // 默认归入第一个分组（默认分组）
                     var defaultGroup = await _context.Groups.FirstOrDefaultAsync();
-                    if (defaultGroup != null)
-                    {
-                        asset.GroupId = defaultGroup.Id;
-                    }
+                    if (defaultGroup != null) asset.GroupId = defaultGroup.Id;
                 }
 
-                // 3. 提取标准硬件与位置字段，并分流出自定义字段
                 var customFields = new Dictionary<string, string>();
                 var standardKeys = new HashSet<string> {
                     "server_url", "building", "floor", "department", "type", "report_type", "software_list",
@@ -60,15 +58,9 @@ namespace AssetServer.Controllers
                 {
                     string key = prop.Name;
                     string val = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() ?? "" : prop.Value.ToString();
-
-                    // 分流：不属于标准字段的，全都视为自定义动态字段！
-                    if (!standardKeys.Contains(key))
-                    {
-                        customFields[key] = val;
-                    }
+                    if (!standardKeys.Contains(key)) customFields[key] = val;
                 }
 
-                // 4. 填充资产标准属性
                 asset.Hostname = GetPropVal(rawPayload, "计算机名称");
                 asset.Username = GetPropVal(rawPayload, "用户名");
                 asset.OS = GetPropVal(rawPayload, "操作系统");
@@ -85,30 +77,19 @@ namespace AssetServer.Controllers
                 asset.Floor = GetPropVal(rawPayload, "floor");
                 asset.Department = GetPropVal(rawPayload, "department");
                 asset.AssetType = GetPropVal(rawPayload, "type");
-
-                // 将自定义动态字段转为 JSON 字符串存储
                 asset.CustomFieldsJson = JsonSerializer.Serialize(customFields);
                 asset.LastReportTime = DateTime.Now;
 
-                if (isNew)
-                {
-                    _context.Assets.Add(asset);
-                }
-                else
-                {
-                    _context.Entry(asset).State = EntityState.Modified;
-                }
+                if (isNew) _context.Assets.Add(asset);
+                else _context.Entry(asset).State = EntityState.Modified;
 
-                // 5. 处理软件清单（如果上报包中包含软件清单）
                 if (rawPayload.TryGetProperty("software_list", out var swListProp) && swListProp.ValueKind == JsonValueKind.Array)
                 {
-                    // 先清空该设备历史存储的软件清单（级联更新，防止垃圾数据）
                     if (!isNew && asset.InstalledSoftware.Count > 0)
                     {
                         _context.SoftwareInfos.RemoveRange(asset.InstalledSoftware);
                     }
 
-                    // 写入新上报的软件明细
                     foreach (var swElement in swListProp.EnumerateArray())
                     {
                         string swName = swElement.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
@@ -117,19 +98,11 @@ namespace AssetServer.Controllers
 
                         if (!string.IsNullOrEmpty(swName))
                         {
-                            var swInfo = new SoftwareInfo
-                            {
-                                AssetId = asset.MacAddress,
-                                Name = swName,
-                                Version = swVer,
-                                InstallDate = swDate
-                            };
-                            _context.SoftwareInfos.Add(swInfo);
+                            _context.SoftwareInfos.Add(new SoftwareInfo { AssetId = asset.MacAddress, Name = swName, Version = swVer, InstallDate = swDate });
                         }
                     }
                 }
 
-                // 6. 记入系统日志
                 var auditLog = new SystemLog
                 {
                     Level = "Info",
@@ -144,7 +117,6 @@ namespace AssetServer.Controllers
             }
             catch (Exception ex)
             {
-                // 底层健壮防崩溃
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }

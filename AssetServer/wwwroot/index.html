@@ -25,7 +25,6 @@
                 <button @click="currentTab = 'logs'" :class="currentTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
                     <i class="fa-solid fa-receipt w-6"></i> 系统审计日志
                 </button>
-                <!-- 【新增】系统设置页面 -->
                 <button @click="currentTab = 'settings'" :class="currentTab === 'settings' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition">
                     <i class="fa-solid fa-gears w-6"></i> 后台系统设置
                 </button>
@@ -43,7 +42,7 @@
             <header class="bg-white h-16 shadow flex items-center justify-between px-8">
                 <div class="text-lg font-bold text-gray-800">{{ tabTitle }}</div>
                 
-                <!-- 【新增】顶部多功能搜索引擎 (支持电脑基本信息搜索 & 全局软件穿透扫描) -->
+                <!-- 顶部多功能搜索引擎 -->
                 <div v-if="currentTab === 'assets'" class="flex space-x-3 items-center">
                     <div class="relative">
                         <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
@@ -129,7 +128,6 @@
                                         <button @click="openRemarksModal(a)" class="text-indigo-600 hover:text-indigo-900 ml-2"><i class="fa-solid fa-pen-to-square"></i></button>
                                     </td>
                                     <td class="px-6 py-4 text-center">
-                                        <!-- 【重构按钮】升级为综合详情卡片，可一并查看硬件和软件 -->
                                         <button @click="openDetailModal(a)" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold transition">
                                             <i class="fa-solid fa-info-circle mr-1"></i> 资产综合详情
                                         </button>
@@ -193,6 +191,7 @@
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200 text-sm font-mono">
+                            <!-- 【修正】将 :key="l.Id" 改正为了 "log.Id"，彻底解除 JS 阻塞闪退崩溃 -->
                             <tr v-for="log in logs" :key="log.Id" class="hover:bg-gray-50">
                                 <td class="px-6 py-4 text-gray-500 text-xs">{{ formatDate(log.Timestamp) }}</td>
                                 <td class="px-6 py-4">
@@ -207,9 +206,8 @@
                     </table>
                 </div>
 
-                <!-- 【新增】TAB 4: 后台系统设置 -->
+                <!-- TAB 4: 后台系统设置 -->
                 <div v-if="currentTab === 'settings'" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- 修改管理员密码与子账户管理 -->
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
                         <h3 class="text-lg font-bold text-gray-800 border-b pb-3"><i class="fa-solid fa-user-lock text-indigo-500 mr-2"></i>后台安全与账户管理</h3>
                         <div class="space-y-3">
@@ -220,7 +218,6 @@
                             </div>
                         </div>
 
-                        <!-- 创建子账户 -->
                         <div class="space-y-3 pt-4 border-t">
                             <h4 class="text-sm font-bold text-gray-600">创建普通管理员子账户</h4>
                             <div class="grid grid-cols-2 gap-3">
@@ -230,7 +227,6 @@
                             <button @click="createSubUser" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold w-full">一键创建并授权</button>
                         </div>
 
-                        <!-- 账户明细列表 -->
                         <div class="space-y-2 pt-4 border-t">
                             <h4 class="text-sm font-bold text-gray-600">后台活跃登录账号名录</h4>
                             <div class="divide-y divide-gray-100 max-h-40 overflow-y-auto">
@@ -242,7 +238,6 @@
                         </div>
                     </div>
 
-                    <!-- 运行端口设置 -->
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
                         <h3 class="text-lg font-bold text-gray-800 border-b pb-3"><i class="fa-solid fa-network-wired text-indigo-500 mr-2"></i>服务绑定端口设置</h3>
                         <p class="text-xs text-gray-400">您可以自定义服务绑定的物理端口，修改后客户端也需要同步修改服务器地址。</p>
@@ -252,7 +247,7 @@
                                 <input type="number" v-model="serverPort" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-center font-bold">
                             </div>
                             <button @click="savePortSetting" class="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow">保存并应用端口配置</button>
-                            <p class="text-xs text-red-500 font-bold bg-red-50 p-2.5 rounded border border-red-200"><i class="fa-solid fa-circle-exclamation mr-1"></i>注意：端口修改直接写入 appsettings.json。写入成功后，您需要手动关闭并重新双击打开服务端 exe，重新绑定物理网卡端口才能生效。</p>
+                            <p class="text-xs text-red-500 font-bold bg-red-50 p-2.5 rounded border border-red-200"><i class="fa-solid fa-circle-exclamation mr-1"></i>注意：端口修改直接写入 appsettings.json。写入成功后，您需要手动关闭并重新双击打开服务端 exe，重新绑定物理端口才能生效。</p>
                         </div>
                     </div>
                 </div>
@@ -260,7 +255,7 @@
             </main>
         </div>
 
-        <!-- 【重构模态窗一】升级为资产综合详情卡片 (整合全套硬件规格 & 软件 Tab) -->
+        <!-- 资产综合详情卡片 -->
         <div v-if="activeDetailAsset" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
             <div class="bg-white rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
                 <div class="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
@@ -271,7 +266,6 @@
                     <button @click="activeDetailAsset = null" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
                 </div>
                 
-                <!-- 卡片内部双 Tab 切页 -->
                 <div class="bg-gray-100 flex px-6 py-2 border-b text-sm font-bold">
                     <button @click="modalTab = 'hardware'" :class="modalTab === 'hardware' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'" class="px-4 py-2 mr-4 transition">
                         核心硬件及位置配置
@@ -282,7 +276,6 @@
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-6">
-                    <!-- Tab A: 硬件参数细节网格 -->
                     <div v-if="modalTab === 'hardware'" class="grid grid-cols-2 gap-4 text-sm">
                         <div class="p-3 bg-gray-50 rounded border"><span class="text-gray-400 font-bold block">操作系统</span><span class="text-gray-700 font-bold block mt-1">{{ activeDetailAsset.OS }}</span></div>
                         <div class="p-3 bg-gray-50 rounded border"><span class="text-gray-400 font-bold block">处理器 / CPU</span><span class="text-gray-700 font-bold block mt-1">{{ activeDetailAsset.CPU }}</span></div>
@@ -299,7 +292,6 @@
                         </div>
                     </div>
 
-                    <!-- Tab B: 精细化软件列表 -->
                     <div v-if="modalTab === 'software'">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
@@ -376,19 +368,16 @@
                 const logs = ref([]);
                 const users = ref([]);
 
-                // 【新增】搜索条件响应式属性
                 const searchQuery = ref('');
                 const softwareQuery = ref('');
 
-                // 【新增】系统设置绑定属性
                 const serverPort = ref(5000);
                 const newPassword = ref('');
                 const subUsername = ref('');
                 const subPassword = ref('');
 
-                // 【综合卡片重构】
                 const activeDetailAsset = ref(null);
-                const modalTab = ref('hardware'); // 'hardware' or 'software'
+                const modalTab = ref('hardware'); 
                 const activeSoftwareList = ref([]);
                 
                 const activeRemarksAsset = ref(null);
@@ -409,7 +398,6 @@
                     return assets.value.reduce((sum, a) => sum + (a.SoftwareCount || 0), 0);
                 });
 
-                // 【增强】支持参数查询台账
                 const fetchAssets = async () => {
                     try {
                         let url = '/api/admin/assets';
@@ -437,7 +425,6 @@
                     } catch {}
                 };
 
-                // 【新增】拉取用户列表
                 const fetchUsers = async () => {
                     try {
                         const r = await fetch('/api/admin/users');
@@ -456,10 +443,9 @@
                     } catch {}
                 };
 
-                // 【重构详情模态窗】点击一行，同时拉取并配置核心硬件与软件 Tab
                 const openDetailModal = async (asset) => {
                     activeDetailAsset.value = asset;
-                    modalTab.value = 'hardware'; // 默认进入硬件参数卡片
+                    modalTab.value = 'hardware'; 
                     activeSoftwareList.value = [];
                     try {
                         const r = await fetch(`/api/admin/assets/${asset.MacAddress}/software`);
@@ -514,7 +500,6 @@
                     } catch {}
                 };
 
-                // 【新增】修改当前用户密码
                 const changeMyPassword = async () => {
                     if (!newPassword.value.trim()) return;
                     try {
@@ -530,7 +515,6 @@
                     } catch {}
                 };
 
-                // 【新增】创建子账户
                 const createSubUser = async () => {
                     if (!subUsername.value.trim() || !subPassword.value.trim()) return;
                     try {
@@ -550,7 +534,6 @@
                     } catch {}
                 };
 
-                // 【新增】删除子账户
                 const deleteUser = async (username) => {
                     if (!confirm(`确定要注销登录账号 [${username}] 吗？`)) return;
                     try {
@@ -559,7 +542,6 @@
                     } catch {}
                 };
 
-                // 【新增】在线保存服务监听端口
                 const savePortSetting = async () => {
                     if (serverPort.value < 1024 || serverPort.value > 65535) return;
                     try {
@@ -602,7 +584,6 @@
                     fetchLogs();
                     fetchUsers();
 
-                    // 20秒静默轮询更新状态
                     setInterval(() => {
                         if (currentTab.value === 'assets') fetchAssets();
                         if (currentTab.value === 'groups') fetchGroups();

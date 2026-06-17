@@ -15,12 +15,42 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 全局策略类
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
         public static int ScanIntervalMinutes = 120;
+    }
+
+    public static class DebugLogger
+    {
+        private static readonly object logLock = new object();
+        public static readonly List<string> Logs = new List<string>();
+        public static Action<string> OnLogAdded;
+
+        public static void Log(string level, string message, Exception ex = null)
+        {
+            string time = DateTime.Now.ToString("HH:mm:ss");
+            string line = $"[{time}] [{level}] {message}";
+            if (ex != null)
+            {
+                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
+            }
+
+            lock (logLock)
+            {
+                Logs.Add(line);
+                if (Logs.Count > 200) Logs.RemoveAt(0); 
+            }
+
+            OnLogAdded?.Invoke(line);
+        }
+    }
+
+    public class ResultItem
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -215,10 +245,16 @@ namespace AssetCollector
                     return;
                 }
 
+                // 【核心修复】安全地跨线程读取服务器地址文本框
+                string serverUrl = "";
+                Dispatcher.Invoke(() => { serverUrl = TxtServerUrl.Text.Trim().TrimEnd('/'); });
+
+                if (string.IsNullOrEmpty(serverUrl)) return;
+
                 var reqObj = new { MacAddress = primaryMac };
                 string json = JsonConvert.SerializeObject(reqObj);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                string url = TxtServerUrl.Text.Trim().TrimEnd('/') + "/api/heartbeat";
+                string url = serverUrl + "/api/heartbeat";
 
                 DebugLogger.Log("INFO", $"正在向服务器对齐最新上报策略。API: {url}");
                 var response = await httpClient.PostAsync(url, content);
@@ -263,7 +299,7 @@ namespace AssetCollector
                 }
                 else
                 {
-                    DebugLogger.Log("WARN", $"心跳策略对齐失败：服务器返回了错误的状态码 [{(int)response.StatusCode} {response.ReasonPhrase}]。");
+                    DebugLogger.Log("WARN", $"心跳策略对齐失败：服务器返回了错误的状态码 [{(int)response.StatusCode} {response.ReasonPhrase}]。可能是设备在数据库里还未注册。");
                 }
             }
             catch (Exception ex)
@@ -292,10 +328,14 @@ namespace AssetCollector
                 UpdateStatusText($"正在后台同步队列（剩余：{queue.Count} 个待上报）...");
                 DebugLogger.Log("INFO", $"开始按序清理并发送积压队列中的 {queue.Count} 个包...");
 
+                // 【核心修复】安全跨线程读取
+                string fallbackUrl = "";
+                Dispatcher.Invoke(() => { fallbackUrl = TxtServerUrl.Text.Trim(); });
+
                 while (queue.Count > 0)
                 {
                     var item = queue[0];
-                    string serverUrl = item.ContainsKey("server_url") ? item["server_url"].ToString() : TxtServerUrl.Text;
+                    string serverUrl = item.ContainsKey("server_url") ? item["server_url"].ToString() : fallbackUrl;
 
                     bool isSuccess = await UploadSinglePayloadAsync(serverUrl, item);
 
@@ -399,7 +439,6 @@ namespace AssetCollector
             }
         }
 
-        // ========== 运行日志查看模块 ==========
         private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
         {
             if (logWindow != null && logWindow.IsLoaded)
@@ -465,7 +504,6 @@ namespace AssetCollector
             logWindow.Show();
         }
 
-        // ========== 帮助与关于 ==========
         private void BtnHelp_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show(
@@ -479,15 +517,19 @@ namespace AssetCollector
                 "帮助说明", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        // ========== 辅助 Payload 构造 ==========
+        // 【核心修复】安全跨线程构造 Payload
         private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
         {
             var payload = new Dictionary<string, object>();
-            payload["server_url"] = TxtServerUrl.Text.Trim();
-            payload["building"] = TxtBuilding.Text.Trim();
-            payload["floor"] = TxtFloor.Text.Trim();
-            payload["department"] = TxtDept.Text.Trim();
-            payload["type"] = TxtAssetType.Text.Trim();
+            
+            Dispatcher.Invoke(() => 
+            {
+                payload["server_url"] = TxtServerUrl.Text.Trim();
+                payload["building"] = TxtBuilding.Text.Trim();
+                payload["floor"] = TxtFloor.Text.Trim();
+                payload["department"] = TxtDept.Text.Trim();
+                payload["type"] = TxtAssetType.Text.Trim();
+            });
 
             foreach (var kv in customFields) payload[kv.Key] = kv.Value;
             foreach (var item in hw) payload[item.Key] = item.Value;
@@ -495,7 +537,6 @@ namespace AssetCollector
             return payload;
         }
 
-        // ========== 以下为托盘、密码和安全控制系统 ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();

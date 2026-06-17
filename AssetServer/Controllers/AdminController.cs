@@ -30,7 +30,6 @@ namespace AssetServer.Controllers
         {
             var query = _context.Assets.AsQueryable();
 
-            // 模糊搜索：主机名、IP、MAC、科室、楼号
             if (!string.IsNullOrEmpty(search))
             {
                 string s = search.ToLower();
@@ -43,7 +42,6 @@ namespace AssetServer.Controllers
                 );
             }
 
-            // 穿透搜索：查询安装了指定软件的电脑
             if (!string.IsNullOrEmpty(software))
             {
                 string s = software.ToLower();
@@ -273,8 +271,6 @@ namespace AssetServer.Controllers
                 {
                     workbook.SaveAs(ms);
                     var fileBytes = ms.ToArray();
-                    
-                    // 【已彻底更正】直接实例化并返回 FileContentResult 对象，彻底清除编译错！
                     return new Microsoft.AspNetCore.Mvc.FileContentResult(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     {
                         FileDownloadName = $"全网终端资产台账_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
@@ -356,14 +352,16 @@ namespace AssetServer.Controllers
             try
             {
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
-                if (File.Exists(path))
+                
+                // 【核心修复】强制显式使用 System.IO.File，绝不与 ControllerBase.File() 冲突！
+                if (System.IO.File.Exists(path))
                 {
-                    string json = await File.ReadAllTextAsync(path, Encoding.UTF8);
+                    string json = await System.IO.File.ReadAllTextAsync(path, Encoding.UTF8);
                     var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(json) ?? new Dictionary<string, object>();
                     
                     configDict["ServerPort"] = req.Port.ToString();
 
-                    await File.WriteAllTextAsync(path, JsonConvert.SerializeObject(configDict, Formatting.Indented), Encoding.UTF8);
+                    await System.IO.File.WriteAllTextAsync(path, JsonConvert.SerializeObject(configDict, Formatting.Indented), Encoding.UTF8);
 
                     _context.SystemLogs.Add(new SystemLog
                     {

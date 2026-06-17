@@ -11,18 +11,9 @@ using ClosedXML.Excel;
 using System.IO;
 using System.Drawing;
 using System.Timers;
-using System.Linq; 
 
 namespace AssetCollector
 {
-    // 本地全局策略静态内存，用于遵从服务器规则
-    public static class CurrentPolicy
-    {
-        public static bool CollectHardware = true;
-        public static bool CollectSoftware = true;
-        public static int ScanIntervalMinutes = 120;
-    }
-
     public partial class MainWindow : Window
     {
         private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) }; 
@@ -112,18 +103,7 @@ namespace AssetCollector
                     DebugLogger.Log("WARN", "策略控制：服务器要求禁止扫描软件清单，已跳过。");
                 }
 
-                var payload = new Dictionary<string, object>();
-                payload["server_url"] = TxtServerUrl.Text.Trim();
-                payload["building"] = TxtBuilding.Text.Trim();
-                payload["floor"] = TxtFloor.Text.Trim();
-                payload["department"] = TxtDept.Text.Trim();
-                payload["type"] = TxtAssetType.Text.Trim();
-                payload["report_type"] = "auto_startup"; 
-
-                foreach (var kv in customFields) payload[kv.Key] = kv.Value;
-                foreach (var item in hwList) payload[item.Key] = item.Value;
-                if (swList != null && swList.Count > 0) payload["software_list"] = swList;
-
+                var payload = BuildPayloadInternal(hwList, swList);
                 EnqueuePayload(payload);
                 Task.Run(() => FlushQueueSequentialAsync());
             }
@@ -498,7 +478,6 @@ namespace AssetCollector
             TxtExitPassword.Clear();
         }
 
-        // 修改客户端安全退出密码
         private void BtnChangeExitPassword_Click(object sender, RoutedEventArgs e)
         {
             Window dialog = new Window { Title = "修改客户端安全退出密码", Width = 320, Height = 210, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this, ResizeMode = ResizeMode.NoResize, Background = System.Windows.Media.Brushes.White, FontFamily = this.FontFamily };
@@ -819,14 +798,12 @@ namespace AssetCollector
         private void WriteDebugLog(string text, string level = "INFO")
         {
             string formatted = $"[{DateTime.Now:HH:mm:ss}] [{level}] {text}";
-            System.Diagnostics.Debug.WriteLine(formatted); // 写入 VS 调试输出
-            
-            // 实时将重要错误同步呈现在主界面的状态条上，方便管理员排查防火墙/网络情况
+            System.Diagnostics.Debug.WriteLine(formatted); 
             UpdateStatusText(text); 
         }
 
-        // ========== 数据打包、上传、导出 ==========
-        private Dictionary<string, object> BuildPayload()
+        // 【新增】供外部调用的静默上报 Payload 构造
+        private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
         {
             var payload = new Dictionary<string, object>();
             payload["server_url"] = TxtServerUrl.Text.Trim();
@@ -836,13 +813,14 @@ namespace AssetCollector
             payload["type"] = TxtAssetType.Text.Trim();
 
             foreach (var kv in customFields) payload[kv.Key] = kv.Value;
-            foreach (var item in currentResults) payload[item.Key] = item.Value;
-            
-            if (currentSoftwareResults != null && currentSoftwareResults.Count > 0)
-            {
-                payload["software_list"] = currentSoftwareResults;
-            }
+            foreach (var item in hw) payload[item.Key] = item.Value;
+            if (sw != null && sw.Count > 0) payload["software_list"] = sw;
             return payload;
+        }
+
+        private Dictionary<string, object> BuildPayload()
+        {
+            return BuildPayloadInternal(currentResults, currentSoftwareResults);
         }
 
         private async void BtnExport_Click(object sender, RoutedEventArgs e)
@@ -913,12 +891,5 @@ namespace AssetCollector
                 finally { BtnExport.Content = "导出数据 (Excel)"; BtnExport.IsEnabled = true; }
             }
         }
-    }
-
-    // 【新增重要修漏】将 ResultItem 严谨放置在命名空间底层
-    public class ResultItem
-    {
-        public string Key { get; set; }
-        public string Value { get; set; }
     }
 }

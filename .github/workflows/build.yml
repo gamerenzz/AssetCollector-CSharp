@@ -40,13 +40,12 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    - name: Create wwwroot Directory
-      run: mkdir -p AssetServer/wwwroot
-
-    # 【核心新增】利用 GitHub 极速外网，在云端将网页所需的库下载到本地，实现纯内网离线秒开
+    # 【修正】删除了在 Windows 环境下会引发冲突的独立创建文件夹步骤
+    # 直接在具有跨平台兼容性的 Bash 脚本里一次性完成创建和下载
     - name: Download Offline Web Assets (Vue & Tailwind)
       shell: bash
       run: |
+        mkdir -p AssetServer/wwwroot
         curl -L https://unpkg.com/vue@3/dist/vue.global.js -o AssetServer/wwwroot/vue.global.js
         curl -L https://cdn.tailwindcss.com -o AssetServer/wwwroot/tailwind.js
 

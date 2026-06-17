@@ -6,9 +6,8 @@
     <script src="/tailwind.js"></script>
     <script src="/vue.global.js"></script>
     <style>
-        /* 【高阶升级】高保真 A4 矢量 PDF 打印控制样式表 */
         @media print {
-            body > * { display: none !important; } /* 打印时隐藏除打印区域外的所有内容 */
+            body > * { display: none !important; } 
             #printArea, #printArea * { visibility: visible !important; }
             #printArea { position: absolute; left: 0; top: 0; width: 100%; display: block !important; background: white !important; }
             .no-print { display: none !important; }
@@ -27,7 +26,6 @@
                 <button @click="currentTab = 'assets'" :class="currentTab === 'assets' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
                     <span class="text-lg mr-3">💻</span> 资产台账看板
                 </button>
-                <!-- 【需求4】新增：左侧“报表查看”大模块 -->
                 <button @click="currentTab = 'reports'" :class="currentTab === 'reports' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'" class="w-full flex items-center px-4 py-3 rounded-lg text-left transition font-bold">
                     <span class="text-lg mr-3">📊</span> 资产报表查看
                 </button>
@@ -55,7 +53,6 @@
                 <div class="text-lg font-bold text-gray-800">{{ tabTitle }}</div>
                 
                 <div class="flex items-center space-x-4">
-                    <!-- 【重构】一键导出替换为综合高阶导出按钮 -->
                     <button @click="openExportModal" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition shadow font-bold">
                         📊 数据高级导出
                     </button>
@@ -146,7 +143,6 @@
                                         <div class="text-xs text-gray-500 mt-1">
                                             {{ a.OS }}
                                         </div>
-                                        <!-- 【需求1、2】在线状态与最后活跃时间显示 -->
                                         <div class="mt-2 flex items-center space-x-2">
                                             <span v-if="isActive(a.LastReportTime)" class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
                                                 ● 运行中
@@ -178,7 +174,7 @@
                     </div>
                 </div>
 
-                <!-- 【需求4、5】TAB: 报表查看/高级搜索中心 -->
+                <!-- TAB: 报表查看/高级搜索中心 -->
                 <div v-if="currentTab === 'reports'" class="space-y-6">
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
                         <div class="flex items-center space-x-6 border-b pb-4">
@@ -195,7 +191,6 @@
                             </div>
                         </div>
 
-                        <!-- 检索框 -->
                         <div class="flex space-x-3">
                             <input type="text" v-model="reportSearchQuery" @input="onReportSearch" class="border border-gray-300 rounded-lg px-4 py-2 text-sm w-full focus:ring-1 focus:ring-indigo-500" :placeholder="reportSearchPlaceholder">
                             <button @click="onReportSearch" class="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow shrink-0">立即检索</button>
@@ -255,7 +250,7 @@
                     </div>
                 </div>
 
-                <!-- TAB 5: 分组与规则策略 -->
+                <!-- TAB: 分组与规则策略 -->
                 <div v-if="currentTab === 'groups'" class="space-y-6">
                     <div class="flex justify-between items-center">
                         <div class="text-gray-500 text-sm">创建分组后，您可以为不同的分组下发不同的客户端上报策略。如果上报频次设为 0，代表“单次扫描上报”，客户端数据上送成功后将彻底进入静默心跳状态。</div>
@@ -292,12 +287,22 @@
                                     <span class="font-bold">分钟</span>
                                     <span v-if="g.Policy.ScanIntervalMinutes == 0" class="text-emerald-600 text-xs font-bold">（💡 开启单次休眠上报规则）</span>
                                 </div>
+                                
+                                <!-- 【新增】两个核心控制按钮：重新强制扫描、删除分组 -->
+                                <div class="flex justify-between items-center pt-3 border-t mt-3">
+                                    <button @click="triggerForceScan(g.Id)" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-1.5 rounded font-bold transition">
+                                        ⚡ 强制该组重扫一次
+                                    </button>
+                                    <button v-if="g.Id !== 1" @click="deleteGroup(g.Id, g.Name)" class="text-red-500 text-xs hover:text-red-700 font-bold">
+                                        🗑️ 注销删除此组
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- TAB 6: 系统审计日志 -->
+                <!-- TAB: 系统审计日志 -->
                 <div v-if="currentTab === 'logs'" class="bg-white rounded-xl shadow overflow-hidden">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -323,7 +328,7 @@
                     </table>
                 </div>
 
-                <!-- TAB 7: 后台系统设置 -->
+                <!-- TAB: 后台系统设置 -->
                 <div v-if="currentTab === 'settings'" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="bg-white p-6 rounded-xl shadow space-y-4">
                         <h3 class="text-lg font-bold text-gray-800 border-b pb-3">👤 后台安全与账户管理</h3>
@@ -380,7 +385,6 @@
                         <h3 class="text-xl font-bold text-gray-800">ℹ️ 资产综合档案详情</h3>
                         <p class="text-xs text-gray-400 mt-1">电脑: {{ activeDetailAsset.Hostname }} | 用户: {{ activeDetailAsset.Username }} | MAC: {{ activeDetailAsset.MacAddress }}</p>
                     </div>
-                    <!-- 高保真 PDF 打印支持 -->
                     <div class="flex items-center space-x-4 no-print">
                         <button @click="printPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition">
                             🖨️ 导出 PDF / 打印本页
@@ -473,7 +477,7 @@
             </div>
         </div>
 
-        <!-- 【需求3】全新高阶数据导出确认面板 (Modal) -->
+        <!-- 高阶数据导出确认面板 -->
         <div v-if="showExportModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
             <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-5">
                 <h3 class="text-lg font-bold text-gray-800 border-b pb-3"><i class="fa-solid fa-file-export text-indigo-500 mr-2"></i>台账数据高级导出</h3>
@@ -485,7 +489,7 @@
                         <div class="flex space-x-4">
                             <label class="flex items-center space-x-2 text-sm text-gray-700">
                                 <input type="radio" v-model="exportScope" value="all" class="text-indigo-600 focus:ring-indigo-500">
-                                <span>导出全网所有终端</span>
+                                <span>导出列表下所有终端</span>
                             </label>
                             <label class="flex items-center space-x-2 text-sm text-gray-700" :class="getSelectedCount() === 0 ? 'opacity-40' : ''">
                                 <input type="radio" v-model="exportScope" value="selected" :disabled="getSelectedCount() === 0" class="text-indigo-600 focus:ring-indigo-500">
@@ -536,7 +540,7 @@
             </div>
         </div>
 
-        <!-- 【高阶升级】用于浏览器后台 PDF 打印的、格式极其干净整洁的隐式 A4 矢量报表容器 -->
+        <!-- 用于浏览器后台 PDF 打印的隐式 A4 矢量报表容器 -->
         <div id="reportPrintArea" class="hidden p-8">
             <h1 class="text-2xl font-bold mb-4 text-center border-b pb-4">终端资产台账高级报告单</h1>
             <p class="text-xs text-gray-400 mb-6 text-center">报表生成时间：{{ new Date().toLocaleString() }} | 所属：内网 IT 资产审计部门</p>
@@ -605,26 +609,22 @@
                 const newGroupName = ref('');
                 const newGroupDesc = ref('');
 
-                // 资产大台账多选与状态
                 const selectedMacs = ref([]);
                 const allSelected = ref(false);
                 const batchTargetGroupId = ref('');
 
-                // 【需求4、5】报表查看页面的响应式属性
                 const reportSearchType = ref('hardware');
                 const reportSearchQuery = ref('');
                 const reportResults = ref([]);
                 const selectedReportMacs = ref([]);
                 const allReportSelected = ref(false);
 
-                // 【需求3】高级数据导出面板专用配置
                 const showExportModal = ref(false);
-                const exportScope = ref('all'); // 'all' or 'selected'
-                const exportContent = ref('all'); // 'all', 'hardware', 'software'
-                const exportFormat = ref('excel'); // 'excel' or 'pdf'
-                const currentExportSource = ref('assets'); // 标记是在主看板触发的导出，还是在报表中心触发的
+                const exportScope = ref('all'); 
+                const exportContent = ref('all'); 
+                const exportFormat = ref('excel'); 
+                const currentExportSource = ref('assets'); 
 
-                // 用于高保真 PDF 打印渲染的临时变量
                 const printList = ref([]);
 
                 const tabTitle = computed(() => {
@@ -639,7 +639,6 @@
                     return assets.value.reduce((sum, a) => sum + (a.SoftwareCount || 0), 0);
                 });
 
-                // 动态自适应占位提示语
                 const reportSearchPlaceholder = computed(() => {
                     return reportSearchType.value === 'hardware' 
                         ? '请输入要检索的 IP地址、网卡MAC、主机名称 或 科室位置进行模糊查询...' 
@@ -683,7 +682,6 @@
                     } catch {}
                 };
 
-                // 【需求4、5】报表页面独立检索逻辑
                 const onReportSearch = async () => {
                     if (!reportSearchQuery.value.trim()) {
                         reportResults.value = [];
@@ -705,7 +703,6 @@
                     } catch {}
                 };
 
-                // 资产大台账全选控制
                 const toggleSelectAll = () => {
                     selectedMacs.value = allSelected.value ? assets.value.map(a => a.MacAddress) : [];
                 };
@@ -714,7 +711,6 @@
                     allSelected.value = newVal.length > 0 && newVal.length === assets.value.length;
                 });
 
-                // 报表中心独立全选控制
                 const toggleSelectAllReports = () => {
                     selectedReportMacs.value = allReportSelected.value ? reportResults.value.map(r => r.MacAddress) : [];
                 };
@@ -723,7 +719,6 @@
                     allReportSelected.value = newVal.length > 0 && newVal.length === reportResults.value.length;
                 });
 
-                // 批量修改分组
                 const applyBatchGroup = async () => {
                     if (selectedMacs.value.length === 0 || !batchTargetGroupId.value) return;
                     try {
@@ -799,6 +794,32 @@
                     } catch {}
                 };
 
+                // 【新增】删除分组功能
+                const deleteGroup = async (id, name) => {
+                    if (!confirm('确定要注销并删除分组 [' + name + '] 吗？\n删除后，该分组下的所有电脑会自动变更为 [未分配] 状态。')) return;
+                    try {
+                        const r = await fetch('/api/admin/groups/' + id, { method: 'DELETE' });
+                        if (r.ok) {
+                            MessageBoxSuccess(`分组 [${name}] 已成功注销删除！`);
+                            fetchGroups();
+                            fetchAssets(); // 刷新设备未分配状态
+                        } else {
+                            alert("默认分组受到系统核心保护，无法被删除！");
+                        }
+                    } catch {}
+                };
+
+                // 【新增】强制客户端下发重新扫描指令功能
+                const triggerForceScan = async (id) => {
+                    try {
+                        const r = await fetch('/api/admin/groups/' + id + '/trigger-scan', { method: 'POST' });
+                        if (r.ok) {
+                            MessageBoxSuccess("⚡ 强制重扫指令已下发！该分组下所有客户端在线握手后将立即自动触发一次最新软硬件扫描上报。");
+                            fetchGroups();
+                        }
+                    } catch {}
+                };
+
                 const updatePolicy = async (group) => {
                     try {
                         await fetch('/api/admin/groups/' + group.Id + '/policy', {
@@ -869,9 +890,8 @@
                     alert(text);
                 };
 
-                // ========== 【需求3】高阶数据导出功能模块 ==========
                 const openExportModal = () => {
-                    currentExportSource.value = 'assets'; // 标记在主看板触发
+                    currentExportSource.value = 'assets'; 
                     exportScope.value = selectedMacs.value.length > 0 ? 'selected' : 'all';
                     exportContent.value = 'all';
                     exportFormat.value = 'excel';
@@ -879,25 +899,22 @@
                 };
 
                 const openExportModalFromReport = () => {
-                    currentExportSource.value = 'reports'; // 标记在报表中心触发
+                    currentExportSource.value = 'reports'; 
                     exportScope.value = selectedReportMacs.value.length > 0 ? 'selected' : 'all';
                     exportContent.value = 'all';
                     exportFormat.value = 'excel';
                     showExportModal.value = true;
                 };
 
-                // 获取已选中的设备数
                 const getSelectedCount = () => {
                     return currentExportSource.value === 'assets' 
                         ? selectedMacs.value.length 
                         : selectedReportMacs.value.length;
                 };
 
-                // 执行高级导出动作
                 const executeAdvancedExport = () => {
                     showExportModal.value = false;
 
-                    // 1. 确定要导出的 MAC 集合
                     let targetMacs = [];
                     let sourceList = currentExportSource.value === 'assets' ? assets.value : reportResults.value;
                     let selectedList = currentExportSource.value === 'assets' ? selectedMacs.value : selectedReportMacs.value;
@@ -908,9 +925,7 @@
                         targetMacs = sourceList.map(item => item.MacAddress);
                     }
 
-                    // 2. 如果选择导出为高保真 PDF (Print Media)
                     if (exportFormat.value === 'pdf') {
-                        // 筛选需要打印的电脑数据并交由 HTML 容器渲染后直接呼叫浏览器矢量打印
                         printList.value = sourceList.filter(item => targetMacs.includes(item.MacAddress));
                         setTimeout(() => {
                             window.print();
@@ -918,7 +933,6 @@
                         return;
                     }
 
-                    // 3. 如果选择导出为 C# 服务端强类型多工作簿 Excel
                     let url = '/api/admin/export?target=' + exportContent.value;
                     if (targetMacs.length > 0) {
                         url += '&macs=' + encodeURIComponent(targetMacs.join(','));
@@ -926,7 +940,6 @@
                     window.location.href = url;
                 };
 
-                // 打印单张资产详情卡
                 const printPdf = () => {
                     window.print();
                 };
@@ -937,7 +950,7 @@
                         const lastTime = new Date(reportTimeStr);
                         const now = new Date();
                         const diffMs = now.getTime() - lastTime.getTime();
-                        return diffMs < 300000; // 在线状态判断缩短为 5 分钟
+                        return diffMs < 300000; 
                     } catch { return false; }
                 };
 
@@ -962,7 +975,6 @@
                     fetchUsers();
 
                     setInterval(() => {
-                        // 保证当管理员正在看板或者报表中心进行勾选操作时，暂停静默刷新，绝对保护用户体验
                         if (currentTab.value === 'assets' && selectedMacs.value.length === 0) fetchAssets();
                         if (currentTab.value === 'reports' && selectedReportMacs.value.length === 0) onReportSearch();
                         if (currentTab.value === 'groups') fetchGroups();
@@ -979,7 +991,7 @@
                     reportSearchType, reportSearchQuery, reportResults, selectedReportMacs, allReportSelected, reportSearchPlaceholder,
                     showExportModal, exportScope, exportContent, exportFormat, printList,
                     changeGroup, openDetailModal, openRemarksModal, saveRemarks,
-                    openCreateGroupModal, saveNewGroup, updatePolicy, 
+                    openCreateGroupModal, saveNewGroup, updatePolicy, deleteGroup, triggerForceScan,
                     changeMyPassword, createSubUser, deleteUser, savePortSetting,
                     toggleSelectAll, toggleSelectAllReports, onReportSearch, applyBatchGroup,
                     openExportModal, openExportModalFromReport, getSelectedCount, executeAdvancedExport, printPdf, isActive, handleLogout,

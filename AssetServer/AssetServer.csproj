@@ -11,10 +11,11 @@
     <!-- EF Core 核心与 SQLite 支持 -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2">
-      <!-- 修正：将 </ReleaseAssets> 改正为了 </PrivateAssets> -->
-      <PrivateAssets>all</PrivateAssets> 
+      <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <!-- 【核心补漏】引入服务端生成 Excel 账簿所需的 ClosedXML 依赖 -->
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
   </ItemGroup>
 
 </Project>

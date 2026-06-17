@@ -24,7 +24,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 2. 自动初始化数据库与数据种子
+// 2. 自动初始化数据库与种子数据
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -71,17 +71,26 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// 3. 启用静态网页服务文件流
 app.UseDefaultFiles(); 
 app.UseStaticFiles();  
 
 app.UseCors("AllowAll");
 app.UseAuthorization();
 
-app.MapGet("/health", () => new { status = "Online", message = "终端资产管理平台 WebAPI 服务端正常运行中" });
+// 【核心修改一】网页端：访问根目录 / 时，自动优雅重定向到 index.html
+app.MapGet("/", async context =>
+{
+    context.Response.Redirect("/index.html");
+    await Task.CompletedTask;
+});
+
+// 【核心修改二】API 端：将原有的健康检查移动到 /api/health，绝不阻挡网页访问
+app.MapGet("/api/health", () => new { status = "Online", message = "终端资产管理平台 WebAPI 服务端正常运行中" });
 
 app.MapControllers();
 
-// 【核心修改】动态从 appsettings.json 中读取 ServerPort 配置，若无，则默认监听在 5000 端口
+// 动态读取 appsettings.json 中的端口配置
 var customPort = builder.Configuration.GetValue<string>("ServerPort") ?? "5000";
 
 app.Run($"http://*:{customPort}");

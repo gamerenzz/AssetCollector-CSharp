@@ -137,6 +137,31 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
+        // 【核心新增】4-2. 批量修改选中设备的分组 (需求 1)
+        [HttpPut("assets/batch-group")]
+        public async Task<IActionResult> BatchGroup([FromBody] BatchGroupRequest req)
+        {
+            if (req.Macs == null || req.Macs.Count == 0) return BadRequest("未选中任何设备。");
+            
+            var group = await _context.Groups.FindAsync(req.GroupId);
+            if (group == null) return BadRequest("目标分组不存在。");
+
+            var targetAssets = await _context.Assets.Where(a => req.Macs.Contains(a.MacAddress)).ToListAsync();
+            foreach (var a in targetAssets)
+            {
+                a.GroupId = req.GroupId;
+            }
+
+            _context.SystemLogs.Add(new SystemLog
+            {
+                Level = "Info",
+                Message = $"批量变更分组：共 {targetAssets.Count} 台设备归入 [{group.Name}]"
+            });
+
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
         // 5. 获取分组及规则列表
         [HttpGet("groups")]
         public async Task<IActionResult> GetGroups()
@@ -202,12 +227,23 @@ namespace AssetServer.Controllers
             return Ok(logs);
         }
 
-        // 9. 一键打包导出全网台账 (双工作簿 Excel)
+        // 9. 一键打包导出全网台账 (双工作簿 Excel，支持过滤选中项进行导出)
         [HttpGet("export")]
-        public async Task<IActionResult> ExportExcel()
+        public async Task<IActionResult> ExportExcel([FromQuery] string? macs)
         {
-            var assets = await _context.Assets.Include(a => a.Group).ToListAsync();
-            var software = await _context.SoftwareInfos.Include(s => s.Asset).ToListAsync();
+            var queryAssets = _context.Assets.AsQueryable();
+            var querySoftware = _context.SoftwareInfos.AsQueryable();
+
+            // 如果传了 macs，说明是管理员多选后导出指定的电脑，进行数据过滤
+            if (!string.IsNullOrEmpty(macs))
+            {
+                var macList = macs.Split(',').Select(m => m.Trim()).ToList();
+                queryAssets = queryAssets.Where(a => macList.Contains(a.MacAddress));
+                querySoftware = querySoftware.Where(s => macList.Contains(s.AssetId));
+            }
+
+            var assets = await queryAssets.Include(a => a.Group).ToListAsync();
+            var software = await querySoftware.Include(s => s.Asset).ToListAsync();
 
             using (var workbook = new XLWorkbook())
             {
@@ -353,7 +389,6 @@ namespace AssetServer.Controllers
             {
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
                 
-                // 【核心修复】强制显式使用 System.IO.File，绝不与 ControllerBase.File() 冲突！
                 if (System.IO.File.Exists(path))
                 {
                     string json = await System.IO.File.ReadAllTextAsync(path, Encoding.UTF8);
@@ -386,4 +421,6 @@ namespace AssetServer.Controllers
     public class CreateUserRequest { public string Username { get; set; } = string.Empty; public string Password { get; set; } = string.Empty; }
     public class ChangePasswordRequest { public string Username { get; set; } = string.Empty; public string NewPassword { get; set; } = string.Empty; }
     public class PortRequest { public int Port { get; set; } }
+    // 【新增】批量设分组请求 DTO
+    public class BatchGroupRequest { public List<string> Macs { get; set; } = new List<string>(); public int GroupId { get; set; } }
 }

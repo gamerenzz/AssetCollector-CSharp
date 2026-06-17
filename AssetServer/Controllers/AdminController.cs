@@ -137,7 +137,7 @@ namespace AssetServer.Controllers
             return Ok();
         }
 
-        // 【核心新增】4-2. 批量修改选中设备的分组 (需求 1)
+        // 4-2. 批量修改选中设备的分组 
         [HttpPut("assets/batch-group")]
         public async Task<IActionResult> BatchGroup([FromBody] BatchGroupRequest req)
         {
@@ -227,14 +227,13 @@ namespace AssetServer.Controllers
             return Ok(logs);
         }
 
-        // 9. 一键打包导出全网台账 (双工作簿 Excel，支持过滤选中项进行导出)
+        // 【高阶重构】支持根据 target 参数（all, hardware, software）动态裁切工作簿生成
         [HttpGet("export")]
-        public async Task<IActionResult> ExportExcel([FromQuery] string? macs)
+        public async Task<IActionResult> ExportExcel([FromQuery] string? macs, [FromQuery] string? target)
         {
             var queryAssets = _context.Assets.AsQueryable();
             var querySoftware = _context.SoftwareInfos.AsQueryable();
 
-            // 如果传了 macs，说明是管理员多选后导出指定的电脑，进行数据过滤
             if (!string.IsNullOrEmpty(macs))
             {
                 var macList = macs.Split(',').Select(m => m.Trim()).ToList();
@@ -245,63 +244,73 @@ namespace AssetServer.Controllers
             var assets = await queryAssets.Include(a => a.Group).ToListAsync();
             var software = await querySoftware.Include(s => s.Asset).ToListAsync();
 
+            string exportType = string.IsNullOrEmpty(target) ? "all" : target.ToLower();
+
             using (var workbook = new XLWorkbook())
             {
-                var ws1 = workbook.Worksheets.Add("全网资产台账");
-                string[] headers1 = { "MAC地址", "计算机名称", "用户名", "IP地址", "所属分组", "操作系统", "处理器", "内存", "磁盘", "显卡", "外接显示器", "主板信息", "整机型号", "楼号", "楼层", "科室", "资产类型", "备注", "最后上报时间" };
-                for (int i = 0; i < headers1.Length; i++)
+                // 1. 如果需要导出硬件 (all 或 hardware)
+                if (exportType == "all" || exportType == "hardware")
                 {
-                    ws1.Cell(1, i + 1).Value = headers1[i];
-                    ws1.Cell(1, i + 1).Style.Font.Bold = true;
-                    ws1.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+                    var ws1 = workbook.Worksheets.Add("全网资产台账");
+                    string[] headers1 = { "MAC地址", "计算机名称", "用户名", "IP地址", "所属分组", "操作系统", "处理器", "内存", "磁盘", "显卡", "外接显示器", "主板信息", "整机型号", "楼号", "楼层", "科室", "资产类型", "备注", "最后上报时间" };
+                    for (int i = 0; i < headers1.Length; i++)
+                    {
+                        ws1.Cell(1, i + 1).Value = headers1[i];
+                        ws1.Cell(1, i + 1).Style.Font.Bold = true;
+                        ws1.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+                    }
+                    int r = 2;
+                    foreach (var a in assets)
+                    {
+                        ws1.Cell(r, 1).Value = a.MacAddress;
+                        ws1.Cell(r, 2).Value = a.Hostname;
+                        ws1.Cell(r, 3).Value = a.Username;
+                        ws1.Cell(r, 4).Value = a.IpAddress;
+                        ws1.Cell(r, 5).Value = a.Group != null ? a.Group.Name : "未分配";
+                        ws1.Cell(r, 6).Value = a.OS;
+                        ws1.Cell(r, 7).Value = a.CPU;
+                        ws1.Cell(r, 8).Value = a.RAM;
+                        ws1.Cell(r, 9).Value = a.Disk;
+                        ws1.Cell(r, 10).Value = a.GPU;
+                        ws1.Cell(r, 11).Value = a.Monitor;
+                        ws1.Cell(r, 12).Value = a.Motherboard;
+                        ws1.Cell(r, 13).Value = a.SystemModel;
+                        ws1.Cell(r, 14).Value = a.Building;
+                        ws1.Cell(r, 15).Value = a.Floor;
+                        ws1.Cell(r, 16).Value = a.Department;
+                        ws1.Cell(r, 17).Value = a.AssetType;
+                        ws1.Cell(r, 18).Value = a.Remarks;
+                        ws1.Cell(r, 19).Value = a.LastReportTime.ToString("yyyy-MM-dd HH:mm:ss");
+                        r++;
+                    }
+                    ws1.Columns().AdjustToContents();
                 }
-                int r = 2;
-                foreach (var a in assets)
-                {
-                    ws1.Cell(r, 1).Value = a.MacAddress;
-                    ws1.Cell(r, 2).Value = a.Hostname;
-                    ws1.Cell(r, 3).Value = a.Username;
-                    ws1.Cell(r, 4).Value = a.IpAddress;
-                    ws1.Cell(r, 5).Value = a.Group != null ? a.Group.Name : "未分配";
-                    ws1.Cell(r, 6).Value = a.OS;
-                    ws1.Cell(r, 7).Value = a.CPU;
-                    ws1.Cell(r, 8).Value = a.RAM;
-                    ws1.Cell(r, 9).Value = a.Disk;
-                    ws1.Cell(r, 10).Value = a.GPU;
-                    ws1.Cell(r, 11).Value = a.Monitor;
-                    ws1.Cell(r, 12).Value = a.Motherboard;
-                    ws1.Cell(r, 13).Value = a.SystemModel;
-                    ws1.Cell(r, 14).Value = a.Building;
-                    ws1.Cell(r, 15).Value = a.Floor;
-                    ws1.Cell(r, 16).Value = a.Department;
-                    ws1.Cell(r, 17).Value = a.AssetType;
-                    ws1.Cell(r, 18).Value = a.Remarks;
-                    ws1.Cell(r, 19).Value = a.LastReportTime.ToString("yyyy-MM-dd HH:mm:ss");
-                    r++;
-                }
-                ws1.Columns().AdjustToContents();
 
-                var ws2 = workbook.Worksheets.Add("全网软件清单明细");
-                string[] headers2 = { "归属电脑名", "IP地址", "网卡MAC", "软件名称", "版本号", "安装日期" };
-                for (int i = 0; i < headers2.Length; i++)
+                // 2. 如果需要导出软件 (all 或 software)
+                if (exportType == "all" || exportType == "software")
                 {
-                    ws2.Cell(1, i + 1).Value = headers2[i];
-                    ws2.Cell(1, i + 1).Style.Font.Bold = true;
-                    ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightSlateGray;
-                    ws2.Cell(1, i + 1).Style.Font.FontColor = XLColor.White;
+                    var ws2 = workbook.Worksheets.Add("全网软件清单明细");
+                    string[] headers2 = { "归属电脑名", "IP地址", "网卡MAC", "软件名称", "版本号", "安装日期" };
+                    for (int i = 0; i < headers2.Length; i++)
+                    {
+                        ws2.Cell(1, i + 1).Value = headers2[i];
+                        ws2.Cell(1, i + 1).Style.Font.Bold = true;
+                        ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightSlateGray;
+                        ws2.Cell(1, i + 1).Style.Font.FontColor = XLColor.White;
+                    }
+                    int r = 2;
+                    foreach (var s in software)
+                    {
+                        ws2.Cell(r, 1).Value = s.Asset != null ? s.Asset.Hostname : "Unknown";
+                        ws2.Cell(r, 2).Value = s.Asset != null ? s.Asset.IpAddress : "Unknown";
+                        ws2.Cell(r, 3).Value = s.AssetId;
+                        ws2.Cell(r, 4).Value = s.Name;
+                        ws2.Cell(r, 5).Value = s.Version;
+                        ws2.Cell(r, 6).Value = s.InstallDate;
+                        r++;
+                    }
+                    ws2.Columns().AdjustToContents();
                 }
-                r = 2;
-                foreach (var s in software)
-                {
-                    ws2.Cell(r, 1).Value = s.Asset != null ? s.Asset.Hostname : "Unknown";
-                    ws2.Cell(r, 2).Value = s.Asset != null ? s.Asset.IpAddress : "Unknown";
-                    ws2.Cell(r, 3).Value = s.AssetId;
-                    ws2.Cell(r, 4).Value = s.Name;
-                    ws2.Cell(r, 5).Value = s.Version;
-                    ws2.Cell(r, 6).Value = s.InstallDate;
-                    r++;
-                }
-                ws2.Columns().AdjustToContents();
 
                 using (var ms = new MemoryStream())
                 {
@@ -421,6 +430,5 @@ namespace AssetServer.Controllers
     public class CreateUserRequest { public string Username { get; set; } = string.Empty; public string Password { get; set; } = string.Empty; }
     public class ChangePasswordRequest { public string Username { get; set; } = string.Empty; public string NewPassword { get; set; } = string.Empty; }
     public class PortRequest { public int Port { get; set; } }
-    // 【新增】批量设分组请求 DTO
     public class BatchGroupRequest { public List<string> Macs { get; set; } = new List<string>(); public int GroupId { get; set; } }
 }

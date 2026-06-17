@@ -24,7 +24,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 2. 自动初始化数据库与种子数据
+// 2. 自动初始化数据库与数据种子
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -71,19 +71,17 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// 3. 启用静态网页服务文件流（支持 wwwroot）
 app.UseDefaultFiles(); 
 app.UseStaticFiles();  
 
 app.UseCors("AllowAll");
 app.UseAuthorization();
 
-// 为主页绑定一个健康检查接口
 app.MapGet("/health", () => new { status = "Online", message = "终端资产管理平台 WebAPI 服务端正常运行中" });
 
 app.MapControllers();
 
-// 【核心修改】
-// 默认 app.Run() 仅绑定 localhost，会导致局域网 IP 访问被拒绝拒连。
-// 改为绑定 "http://*:5000" 即可完美向全网、局域网所有网卡 IP 开放服务！
-app.Run("http://*:5000");
+// 【核心修改】动态从 appsettings.json 中读取 ServerPort 配置，若无，则默认监听在 5000 端口
+var customPort = builder.Configuration.GetValue<string>("ServerPort") ?? "5000";
+
+app.Run($"http://*:{customPort}");

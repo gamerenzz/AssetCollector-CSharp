@@ -71,13 +71,19 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// 3. 【核心新增】启用静态网页服务文件流（支持 wwwroot）
-app.UseDefaultFiles(); // 允许默认访问 index.html
-app.UseStaticFiles();  // 启用静态文件支持
+// 3. 启用静态网页服务文件流（支持 wwwroot）
+app.UseDefaultFiles(); 
+app.UseStaticFiles();  
 
 app.UseCors("AllowAll");
 app.UseAuthorization();
 
+// 为主页绑定一个健康检查接口
+app.MapGet("/health", () => new { status = "Online", message = "终端资产管理平台 WebAPI 服务端正常运行中" });
+
 app.MapControllers();
 
-app.Run();
+// 【核心修改】
+// 默认 app.Run() 仅绑定 localhost，会导致局域网 IP 访问被拒绝拒连。
+// 改为绑定 "http://*:5000" 即可完美向全网、局域网所有网卡 IP 开放服务！
+app.Run("http://*:5000");

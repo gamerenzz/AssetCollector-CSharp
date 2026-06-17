@@ -3,9 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <title>终端资产管理平台 - 控制台</title>
-    <!-- 【修正】改用打包在本地的运行库，支持 100% 纯内网离线运行 -->
     <script src="/tailwind.js"></script>
     <script src="/vue.global.js"></script>
+    <!-- 【高阶升级】极简优雅的本地矢量 PDF 打印样式表 -->
+    <style>
+        @media print {
+            body * { visibility: hidden !important; } /* 打印时隐藏除详情卡片外的所有页面内容 */
+            #printArea, #printArea * { visibility: visible !important; }
+            #printArea { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen font-sans">
     <div id="app" class="flex min-h-screen">
@@ -55,8 +62,11 @@
                 </div>
 
                 <div class="flex items-center space-x-4">
+                    <!-- 更改按钮动作：如果勾选了多台，则只导出选中的那几台 -->
                     <button @click="exportExcel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition shadow font-bold">
-                        📊 一键导出全网台账 (Excel)
+                        📊 一键导出台账 (Excel)
+                        <span v-if="selectedMacs.length > 0">已选中 {{ selectedMacs.length }} 台</span>
+                        <span v-else>全网</span>
                     </button>
                 </div>
             </header>
@@ -67,7 +77,7 @@
                 <!-- TAB 1: 资产台账看板 -->
                 <div v-if="currentTab === 'assets'" class="space-y-6">
                     <!-- 资产数据统计牌 -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="bg-white p-6 rounded-xl shadow border-l-4 border-indigo-500 flex items-center justify-between">
                             <div>
                                 <p class="text-xs font-bold text-gray-400 uppercase">管理资产总数</p>
@@ -84,11 +94,34 @@
                         </div>
                     </div>
 
+                    <!-- 【新增】批量处理控制工具栏 (在勾选了至少一台设备后自动弹跳显示) -->
+                    <div v-if="selectedMacs.length > 0" class="bg-indigo-50 p-4 rounded-xl border border-indigo-200 flex items-center justify-between shadow-sm transition">
+                        <div class="text-sm text-indigo-800 font-bold">
+                            ⚠️ 批量控制状态：当前已勾选 <span class="text-lg underline">{{ selectedMacs.length }}</span> 台设备
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-sm text-gray-600">批量变更分组为:</span>
+                            <select v-model="batchTargetGroupId" class="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none">
+                                <option value="" disabled>选择目标分组...</option>
+                                <option v-for="g in groups" :key="g.Id" :value="g.Id">{{ g.Name }}</option>
+                            </select>
+                            <button @click="applyBatchGroup" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition">
+                                立即修改
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- 核心表格 -->
                     <div class="bg-white rounded-xl shadow overflow-hidden">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
+                                    <!-- 【新增】全选框列 -->
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-gray-500 w-12">
+                                        <input type="checkbox" v-model="allSelected" @change="toggleSelectAll" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                    </th>
+                                    <!-- 【新增】序号列 -->
+                                    <th class="px-4 py-3 text-center text-xs font-bold text-gray-500 w-16">序号</th>
                                     <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">终端标识 / MAC</th>
                                     <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">位置信息 (楼号/层/科室)</th>
                                     <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">整机型号 / 操作系统</th>
@@ -98,7 +131,15 @@
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200 text-sm">
-                                <tr v-for="a in assets" :key="a.MacAddress" class="hover:bg-gray-50">
+                                <tr v-for="(a, index) in assets" :key="a.MacAddress" class="hover:bg-gray-50">
+                                    <!-- 【新增】单选框 -->
+                                    <td class="px-4 py-4 text-center">
+                                        <input type="checkbox" v-model="selectedMacs" :value="a.MacAddress" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                    </td>
+                                    <!-- 【新增】序号自动序列号 -->
+                                    <td class="px-4 py-4 text-center font-mono text-gray-400">
+                                        {{ index + 1 }}
+                                    </td>
                                     <td class="px-6 py-4">
                                         <div class="font-bold text-gray-800">{{ a.Hostname }} ({{ a.Username }})</div>
                                         <div class="text-xs text-gray-400 mt-1 font-mono">MAC: {{ a.MacAddress }}</div>
@@ -115,7 +156,18 @@
                                     </td>
                                     <td class="px-6 py-4">
                                         <div class="font-bold text-gray-700">{{ a.SystemModel }}</div>
-                                        <div class="text-xs text-gray-500 mt-1">{{ a.OS }}</div>
+                                        <div class="text-xs text-gray-500 mt-1">
+                                            {{ a.OS }}
+                                        </div>
+                                        <!-- 【新增】活跃在线/离线状态指示徽章 -->
+                                        <div class="mt-2">
+                                            <span v-if="isActive(a.LastReportTime)" class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                                ● 刚刚更新/活跃
+                                            </span>
+                                            <span v-else class="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                                ● 静默/单次上报
+                                            </span>
+                                        </div>
                                     </td>
                                     <td class="px-6 py-4">
                                         <select v-model="a.GroupId" @change="changeGroup(a.MacAddress, a.GroupId)" class="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
@@ -129,7 +181,7 @@
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <button @click="openDetailModal(a)" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-bold transition">
-                                            🔍 资产综合详情
+                                            🔍 综合详情卡
                                         </button>
                                     </td>
                                 </tr>
@@ -141,7 +193,7 @@
                 <!-- TAB 2: 分组与规则策略 -->
                 <div v-if="currentTab === 'groups'" class="space-y-6">
                     <div class="flex justify-between items-center">
-                        <div class="text-gray-500 text-sm">创建分组后，您可以为不同的分组下发不同的客户端上报策略。</div>
+                        <div class="text-gray-500 text-sm">创建分组后，您可以为不同的分组下发不同的客户端上报策略。如果上报频次设为 0，代表“单次扫描上报”，客户端数据上送成功后将彻底进入静默休眠状态。</div>
                         <button @click="openCreateGroupModal" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition shadow">
                             ➕ 新建终端分组
                         </button>
@@ -171,8 +223,10 @@
                                 </div>
                                 <div class="flex items-center space-x-2 text-sm text-gray-700">
                                     <span>上报检测频次间隔:</span>
-                                    <input type="number" v-model="g.Policy.ScanIntervalMinutes" @change="updatePolicy(g)" class="border border-gray-300 rounded px-2 py-1 w-20 text-center text-sm">
-                                    <span>分钟</span>
+                                    <input type="number" v-model="g.Policy.ScanIntervalMinutes" @change="updatePolicy(g)" class="border border-gray-300 rounded px-2 py-1 w-20 text-center text-sm font-bold">
+                                    <span class="font-bold">分钟</span>
+                                    <!-- 新增：0分钟提示语 -->
+                                    <span v-if="g.Policy.ScanIntervalMinutes == 0" class="text-emerald-600 text-xs font-bold">（💡 开启单次休眠上报规则）</span>
                                 </div>
                             </div>
                         </div>
@@ -254,15 +308,21 @@
             </main>
         </div>
 
-        <!-- 资产综合详情卡片 -->
+        <!-- 资产综合详情卡片 (已锚定 #printArea 支持高保真 PDF 打印) -->
         <div v-if="activeDetailAsset" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-            <div class="bg-white rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
+            <div id="printArea" class="bg-white rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
                 <div class="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
                     <div>
                         <h3 class="text-xl font-bold text-gray-800">ℹ️ 资产综合档案详情</h3>
                         <p class="text-xs text-gray-400 mt-1">电脑: {{ activeDetailAsset.Hostname }} | 用户: {{ activeDetailAsset.Username }} | MAC: {{ activeDetailAsset.MacAddress }}</p>
                     </div>
-                    <button @click="activeDetailAsset = null" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+                    <!-- 顶端增加 PDF 打印与关闭按钮 -->
+                    <div class="flex items-center space-x-4">
+                        <button @click="printPdf" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition">
+                            🖨️ 导出 PDF / 打印本卡
+                        </button>
+                        <button @click="activeDetailAsset = null" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+                    </div>
                 </div>
                 
                 <div class="bg-gray-100 flex px-6 py-2 border-b text-sm font-bold">
@@ -356,7 +416,7 @@
             window.location.href = '/login.html';
         }
 
-        const { createApp, ref, computed, onMounted } = Vue;
+        const { createApp, ref, computed, onMounted, watch } = Vue;
 
         createApp({
             setup() {
@@ -386,6 +446,11 @@
                 const newGroupName = ref('');
                 const newGroupDesc = ref('');
 
+                // 【新增】保存多选 MAC 地址
+                const selectedMacs = ref([]);
+                const allSelected = ref(false);
+                const batchTargetGroupId = ref('');
+
                 const tabTitle = computed(() => {
                     if (currentTab.value === 'assets') return '全网终端资产台账';
                     if (currentTab.value === 'groups') return '上报规则与分组策略';
@@ -406,7 +471,11 @@
                         if (params.length > 0) url += '?' + params.join('&');
 
                         const r = await fetch(url);
-                        if (r.ok) assets.value = await r.json();
+                        if (r.ok) {
+                            assets.value = await r.json();
+                            // 重新刷新下多选框的状态，排除已失效或被过滤掉的设备
+                            selectedMacs.value = selectedMacs.value.filter(m => assets.value.some(a => a.MacAddress === m));
+                        }
                     } catch {}
                 };
 
@@ -428,6 +497,43 @@
                     try {
                         const r = await fetch('/api/admin/users');
                         if (r.ok) users.value = await r.json();
+                    } catch {}
+                };
+
+                // 【新增】全选与单选的绑定监控逻辑
+                const toggleSelectAll = () => {
+                    if (allSelected.value) {
+                        selectedMacs.value = assets.value.map(a => a.MacAddress);
+                    } else {
+                        selectedMacs.value = [];
+                    }
+                };
+
+                watch(selectedMacs, (newVal) => {
+                    if (newVal.length === 0) {
+                        allSelected.value = false;
+                    } else if (newVal.length === assets.value.length) {
+                        allSelected.value = true;
+                    } else {
+                        allSelected.value = false;
+                    }
+                });
+
+                // 【新增】批量设置分组
+                const applyBatchGroup = async () => {
+                    if (selectedMacs.value.length === 0 || !batchTargetGroupId.value) return;
+                    try {
+                        const r = await fetch('/api/admin/assets/batch-group', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ macs: selectedMacs.value, groupId: parseInt(batchTargetGroupId.value) })
+                        });
+                        if (r.ok) {
+                            MessageBoxSuccess(`成功批量将 ${selectedMacs.value.length} 台设备划入新分组！`);
+                            selectedMacs.value = [];
+                            batchTargetGroupId.value = '';
+                            fetchAssets();
+                        }
                     } catch {}
                 };
 
@@ -559,8 +665,29 @@
                     alert(text);
                 };
 
+                // 【升级】导出 Excel：如果勾选了多台，则只导出选中的终端；没选则默认一键导出全网
                 const exportExcel = () => {
-                    window.location.href = '/api/admin/export';
+                    let url = '/api/admin/export';
+                    if (selectedMacs.value.length > 0) {
+                        url += '?macs=' + encodeURIComponent(selectedMacs.value.join(','));
+                    }
+                    window.location.href = url;
+                };
+
+                // 【新增】网页端高清矢量 PDF 打印控制
+                const printPdf = () => {
+                    window.print();
+                };
+
+                // 判断设备最近 10 分钟内有没有重新上送，来确定状态
+                const isActive = (reportTimeStr) => {
+                    if (!reportTimeStr) return false;
+                    try {
+                        const lastTime = new Date(reportTimeStr);
+                        const now = new Date();
+                        const diffMs = now.getTime() - lastTime.getTime();
+                        return diffMs < 600000; // 10分钟内上报过，视为刚刚活跃
+                    } catch { return false; }
                 };
 
                 const handleLogout = () => {
@@ -584,7 +711,7 @@
                     fetchUsers();
 
                     setInterval(() => {
-                        if (currentTab.value === 'assets') fetchAssets();
+                        if (currentTab.value === 'assets' && selectedMacs.value.length === 0) fetchAssets(); // 当管理员正在操作多选时，暂停后台刷新，防止打断勾选
                         if (currentTab.value === 'groups') fetchGroups();
                         if (currentTab.value === 'logs') fetchLogs();
                     }, 20000);
@@ -595,10 +722,12 @@
                     searchQuery, softwareQuery, serverPort, newPassword, subUsername, subPassword,
                     activeDetailAsset, modalTab, activeSoftwareList, activeRemarksAsset, editRemarksText,
                     showCreateGroupModal, newGroupName, newGroupDesc,
+                    selectedMacs, allSelected, batchTargetGroupId,
                     changeGroup, openDetailModal, openRemarksModal, saveRemarks,
                     openCreateGroupModal, saveNewGroup, updatePolicy, 
                     changeMyPassword, createSubUser, deleteUser, savePortSetting,
-                    exportExcel, handleLogout, parseJson, formatDate
+                    toggleSelectAll, applyBatchGroup, exportExcel, printPdf, isActive, handleLogout,
+                    parseJson, formatDate
                 };
             }
         }).mount('#app');

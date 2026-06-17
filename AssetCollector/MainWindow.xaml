@@ -32,7 +32,7 @@
             <GroupBox Grid.Row="1" Header="服务器配置" Margin="0,0,0,10" Padding="10,5">
                 <StackPanel Orientation="Horizontal">
                     <Label Content="服务器地址:" FontWeight="Bold" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TxtServerUrl" Text="https://localhost:51710" Width="300" Margin="10,0,0,0" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
+                    <TextBox x:Name="TxtServerUrl" Text="http://localhost:5000" Width="300" Margin="10,0,0,0" TextChanged="Input_TextChanged" VerticalContentAlignment="Center"/>
                 </StackPanel>
             </GroupBox>
 

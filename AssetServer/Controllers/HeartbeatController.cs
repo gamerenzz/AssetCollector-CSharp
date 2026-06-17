@@ -28,7 +28,7 @@ namespace AssetServer.Controllers
 
                 var asset = await _context.Assets
                     .Include(a => a.Group)
-                    .ThenInclude(g => g!.Policy) // 【修正】加上 ! 消除编译器非空断言警告
+                    .ThenInclude(g => g!.Policy) 
                     .FirstOrDefaultAsync(a => a.MacAddress == req.MacAddress);
 
                 if (asset == null)
@@ -43,20 +43,22 @@ namespace AssetServer.Controllers
                 bool collectHw = true;
                 bool collectSw = true;
                 int interval = 120; 
+                int policyVersion = 1; // 默认版本号 1
 
-                // 【修正】使用安全空传播符 asset.Group?.Policy 消除警告 CS8602
                 if (asset.Group?.Policy != null)
                 {
                     collectHw = asset.Group.Policy.CollectHardware;
                     collectSw = asset.Group.Policy.CollectSoftware;
                     interval = asset.Group.Policy.ScanIntervalMinutes;
+                    policyVersion = asset.Group.Policy.Version; // 【核心新增】获取服务器最新的策略版本
                 }
 
                 return Ok(new
                 {
                     collect_hardware = collectHw,
                     collect_software = collectSw,
-                    scan_interval_minutes = interval
+                    scan_interval_minutes = interval,
+                    policy_version = policyVersion // 【核心新增】将版本号一并下发
                 });
             }
             catch (Exception ex)

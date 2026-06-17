@@ -401,8 +401,8 @@
                     try {
                         let url = '/api/admin/assets';
                         const params = [];
-                        if (searchQuery.value.trim()) params.push(`search=${encodeURIComponent(searchQuery.value.trim())}`);
-                        if (softwareQuery.value.trim()) params.push(`software=${encodeURIComponent(softwareQuery.value.trim())}`);
+                        if (searchQuery.value.trim()) params.push('search=' + encodeURIComponent(searchQuery.value.trim()));
+                        if (softwareQuery.value.trim()) params.push('software=' + encodeURIComponent(softwareQuery.value.trim()));
                         if (params.length > 0) url += '?' + params.join('&');
 
                         const r = await fetch(url);
@@ -433,7 +433,7 @@
 
                 const changeGroup = async (mac, groupId) => {
                     try {
-                        await fetch(`/api/admin/assets/${mac}/group`, {
+                        await fetch('/api/admin/assets/' + mac + '/group', {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ groupId })
@@ -447,7 +447,7 @@
                     modalTab.value = 'hardware'; 
                     activeSoftwareList.value = [];
                     try {
-                        const r = await fetch(`/api/admin/assets/${asset.MacAddress}/software`);
+                        const r = await fetch('/api/admin/assets/' + asset.MacAddress + '/software');
                         if (r.ok) activeSoftwareList.value = await r.json();
                     } catch {}
                 };
@@ -460,7 +460,7 @@
                 const saveRemarks = async () => {
                     if (!activeRemarksAsset.value) return;
                     try {
-                        await fetch(`/api/admin/assets/${activeRemarksAsset.value.MacAddress}/remarks`, {
+                        await fetch('/api/admin/assets/' + activeRemarksAsset.value.MacAddress + '/remarks', {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ remarks: editRemarksText.value })
@@ -491,7 +491,7 @@
 
                 const updatePolicy = async (group) => {
                     try {
-                        await fetch(`/api/admin/groups/${group.Id}/policy`, {
+                        await fetch('/api/admin/groups/' + group.Id + '/policy', {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(group.Policy)
@@ -523,7 +523,7 @@
                             body: JSON.stringify({ username: subUsername.value.trim(), password: subPassword.value.trim() })
                         });
                         if (r.ok) {
-                            MessageBoxSuccess($"子账户 [{subUsername.value}] 创建并授权成功！");
+                            MessageBoxSuccess('子账户 [' + subUsername.value + '] 创建并授权成功！');
                             subUsername.value = '';
                             subPassword.value = '';
                             fetchUsers();
@@ -534,9 +534,9 @@
                 };
 
                 const deleteUser = async (username) => {
-                    if (!confirm(`确定要注销登录账号 [${username}] 吗？`)) return;
+                    if (!confirm('确定要注销登录账号 [' + username + '] 吗？')) return;
                     try {
-                        const r = await fetch(`/api/admin/users/${username}`, { method: 'DELETE' });
+                        const r = await fetch('/api/admin/users/' + username, { method: 'DELETE' });
                         if (r.ok) fetchUsers();
                     } catch {}
                 };
@@ -550,7 +550,7 @@
                             body: JSON.stringify({ port: serverPort.value })
                         });
                         if (r.ok) {
-                            MessageBoxSuccess(`物理网卡端口修改成功！\n全新端口: ${serverPort.value}\n\n请现在手动关闭服务端的黑控制台窗口，然后重新双击运行 AssetServer.exe，即可完成物理端口绑定切换！`);
+                            MessageBoxSuccess('物理网卡端口修改成功！\n全新端口: ' + serverPort.value + '\n\n请现在手动关闭服务端的黑控制台窗口，然后重新双击运行 AssetServer.exe，即可完成物理端口绑定切换！');
                         }
                     } catch {}
                 };

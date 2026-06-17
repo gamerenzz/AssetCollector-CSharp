@@ -1,30 +1,51 @@
-name: Build C# WPF App (.NET 4.7)
+name: Build Client and Server
 
 on:
-  workflow_dispatch: # 允许在 GitHub 网页上手动点击按钮触发编译
+  workflow_dispatch: # 允许手动触发编译
 
 jobs:
-  build:
-    runs-on: windows-latest # 必须使用 Windows 环境编译 WPF
-
+  # 任务一：编译客户端 (WPF .NET 4.7)
+  build-client:
+    runs-on: windows-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Setup .NET
+    - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x' # SDK 版本，它兼容编译 net47
+        dotnet-version: '8.0.x'
 
-    - name: Restore Dependencies
+    - name: Restore Client Dependencies
       run: dotnet restore AssetCollector/AssetCollector.csproj
 
-    - name: Build Application
+    - name: Build Client
       run: dotnet build AssetCollector/AssetCollector.csproj -c Release --no-restore
 
-    - name: Publish Artifact (Upload Exe)
+    - name: Upload Client Exe
       uses: actions/upload-artifact@v4
       with:
-        name: AssetCollector-Release
-        # 提取编译好的 exe 及依赖项
+        name: AssetCollector-Client-Windows # 客户端下载包名称
         path: AssetCollector/bin/Release/net47/
+
+  # 任务二：编译服务端 (ASP.NET Core .NET 8.0)
+  build-server:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Publish Server (Release)
+      # 使用 dotnet publish 命令，将服务端及所有依赖编译输出到 publish 目录
+      run: dotnet publish AssetServer/AssetServer.csproj -c Release -o publish/AssetServer
+
+    - name: Upload Server Files
+      uses: actions/upload-artifact@v4
+      with:
+        name: AssetServer-WebAPI-Release # 服务端下载包名称
+        path: publish/AssetServer/

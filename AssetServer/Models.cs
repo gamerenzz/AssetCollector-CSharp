@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+// 【新增】引入 JSON 忽略命名空间
+using System.Text.Json.Serialization;
 
 namespace AssetServer
 {
@@ -9,7 +11,7 @@ namespace AssetServer
     public class Asset
     {
         [Key]
-        public string MacAddress { get; set; } = string.Empty; // 以 MAC 地址为主键（唯一标识）
+        public string MacAddress { get; set; } = string.Empty; 
         
         public string Hostname { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
@@ -23,26 +25,22 @@ namespace AssetServer
         public string Monitor { get; set; } = string.Empty;
         public string SystemModel { get; set; } = string.Empty;
 
-        // 位置信息
         public string Building { get; set; } = string.Empty;
         public string Floor { get; set; } = string.Empty;
         public string Department { get; set; } = string.Empty;
         public string AssetType { get; set; } = string.Empty;
 
-        // 动态自定义字段 (存储为 JSON 字符串)
         public string CustomFieldsJson { get; set; } = "{}";
-
-        // 管理员在后台手动设置的备注 (需求 3)
         public string Remarks { get; set; } = string.Empty;
 
-        // 分组关联 (需求 2, nullable)
         public int? GroupId { get; set; }
         [ForeignKey("GroupId")]
         public Group? Group { get; set; }
 
         public DateTime LastReportTime { get; set; } = DateTime.Now;
 
-        // 一对多关联：一台设备拥有多个已安装软件
+        // 【修正】防止查询 Asset 时级联序列化软件清单造成可能的死循环
+        [JsonIgnore]
         public ICollection<SoftwareInfo> InstalledSoftware { get; set; } = new List<SoftwareInfo>();
     }
 
@@ -53,8 +51,10 @@ namespace AssetServer
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int Id { get; set; }
 
-        public string AssetId { get; set; } = string.Empty; // 关联的资产 MAC 地址
+        public string AssetId { get; set; } = string.Empty; 
         [ForeignKey("AssetId")]
+        // 【修正】防止序列化软件明细时往回序列化 Asset 造成死循环
+        [JsonIgnore]
         public Asset? Asset { get; set; }
 
         public string Name { get; set; } = string.Empty;
@@ -62,7 +62,7 @@ namespace AssetServer
         public string InstallDate { get; set; } = string.Empty;
     }
 
-    // 3. 分组表 (需求 2)
+    // 3. 分组表
     public class Group
     {
         [Key]
@@ -73,11 +73,10 @@ namespace AssetServer
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
 
-        // 一个分组对应一条上报规则 (需求 4)
         public Policy? Policy { get; set; }
     }
 
-    // 4. 采集规则/策略表 (需求 4)
+    // 4. 采集规则/策略表
     public class Policy
     {
         [Key]
@@ -86,14 +85,16 @@ namespace AssetServer
 
         public int GroupId { get; set; }
         [ForeignKey("GroupId")]
+        // 【修正】核心修复：防止序列化策略时往回序列化 Group 造成死循环崩溃
+        [JsonIgnore]
         public Group? Group { get; set; }
 
-        public bool CollectHardware { get; set; } = true;  // 是否要求采集硬件
-        public bool CollectSoftware { get; set; } = true;  // 是否要求采集软件
-        public int ScanIntervalMinutes { get; set; } = 120; // 默认心跳/扫描间隔
+        public bool CollectHardware { get; set; } = true;  
+        public bool CollectSoftware { get; set; } = true;  
+        public int ScanIntervalMinutes { get; set; } = 120; 
     }
 
-    // 5. 安全审计/系统日志表 (需求 7)
+    // 5. 安全审计/系统日志表
     public class SystemLog
     {
         [Key]
@@ -101,17 +102,17 @@ namespace AssetServer
         public int Id { get; set; }
 
         public DateTime Timestamp { get; set; } = DateTime.Now;
-        public string Level { get; set; } = "Info"; // Info, Warning, Error
+        public string Level { get; set; } = "Info"; 
         public string Message { get; set; } = string.Empty;
         public string Details { get; set; } = string.Empty;
     }
 
-    // 6. 管理后台用户表 (需求 1)
+    // 6. 管理后台用户表
     public class User
     {
         [Key]
         public string Username { get; set; } = string.Empty;
-        public string PasswordHash { get; set; } = string.Empty; // 加密后的密码
+        public string PasswordHash { get; set; } = string.Empty; 
         public string Role { get; set; } = "Administrator";
     }
 }

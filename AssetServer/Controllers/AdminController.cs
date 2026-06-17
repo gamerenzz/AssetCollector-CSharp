@@ -9,8 +9,10 @@ using ClosedXML.Excel;
 using Newtonsoft.Json;
 using System.Security.Cryptography;
 using System.Text;
+// 【修正】导入服务端底层命名空间，解决 Group/Policy 无法识别报错
+using AssetServer;
 
-namespace AssetCollector.Controllers
+namespace AssetServer.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
@@ -42,7 +44,7 @@ namespace AssetCollector.Controllers
                 );
             }
 
-            // 【核心新增】穿透搜索：查询安装了指定软件的电脑
+            // 穿透搜索：查询安装了指定软件的电脑
             if (!string.IsNullOrEmpty(software))
             {
                 string s = software.ToLower();
@@ -277,7 +279,7 @@ namespace AssetCollector.Controllers
             }
         }
 
-        // ========== 【新增】用户与子账户列表管理 ==========
+        // ========== 用户与子账户列表管理 ==========
         [HttpGet("users")]
         public async Task<IActionResult> GetUsers()
         {
@@ -341,7 +343,7 @@ namespace AssetCollector.Controllers
             return Ok();
         }
 
-        // ========== 【新增】修改监听服务端口并保存至 appsettings.json ==========
+        // ========== 修改监听服务端口并保存至 appsettings.json ==========
         [HttpPost("settings/port")]
         public async Task<IActionResult> UpdatePort([FromBody] PortRequest req)
         {
@@ -353,13 +355,10 @@ namespace AssetCollector.Controllers
                 if (File.Exists(path))
                 {
                     string json = await File.ReadAllTextAsync(path, Encoding.UTF8);
-                    // 读出原始 json 对象
                     var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(json) ?? new Dictionary<string, object>();
                     
-                    // 修改或新增端口配置
                     configDict["ServerPort"] = req.Port.ToString();
 
-                    // 写回
                     await File.WriteAllTextAsync(path, JsonConvert.SerializeObject(configDict, Formatting.Indented), Encoding.UTF8);
 
                     _context.SystemLogs.Add(new SystemLog

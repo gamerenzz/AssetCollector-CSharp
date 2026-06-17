@@ -22,7 +22,7 @@ namespace AssetServer
             // 配置级联删除关系：资产被删除时，其关联的已安装软件明细自动清空
             modelBuilder.Entity<SoftwareInfo>()
                 .HasOne(s => s.Asset)
-                .WithMany(a => g => a.InstalledSoftware)
+                .WithMany(a => a.InstalledSoftware) // 【已修正】去掉了多余的 "g =>"
                 .HasForeignKey(s => s.AssetId)
                 .OnDelete(DeleteBehavior.Cascade);
 

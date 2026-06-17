@@ -15,45 +15,12 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 1. 全局策略类 (修复丢失)
+    // 全局策略类
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
         public static int ScanIntervalMinutes = 120;
-    }
-
-    // 2. 实时日志引擎 (修复丢失)
-    public static class DebugLogger
-    {
-        private static readonly object logLock = new object();
-        public static readonly List<string> Logs = new List<string>();
-        public static Action<string> OnLogAdded;
-
-        public static void Log(string level, string message, Exception ex = null)
-        {
-            string time = DateTime.Now.ToString("HH:mm:ss");
-            string line = $"[{time}] [{level}] {message}";
-            if (ex != null)
-            {
-                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
-            }
-
-            lock (logLock)
-            {
-                Logs.Add(line);
-                if (Logs.Count > 200) Logs.RemoveAt(0); 
-            }
-
-            OnLogAdded?.Invoke(line);
-        }
-    }
-
-    // 3. 结果实体类
-    public class ResultItem
-    {
-        public string Key { get; set; }
-        public string Value { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -432,9 +399,7 @@ namespace AssetCollector
             }
         }
 
-        // ========== UI 事件丢失恢复区域 (极其重要) ==========
-
-        // 【恢复】查看实时运行日志按钮事件
+        // ========== 运行日志查看模块 ==========
         private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
         {
             if (logWindow != null && logWindow.IsLoaded)
@@ -500,7 +465,7 @@ namespace AssetCollector
             logWindow.Show();
         }
 
-        // 【恢复】帮助说明按钮事件
+        // ========== 帮助与关于 ==========
         private void BtnHelp_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show(
@@ -514,7 +479,7 @@ namespace AssetCollector
                 "帮助说明", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        // 【辅助构造Payload】
+        // ========== 辅助 Payload 构造 ==========
         private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
         {
             var payload = new Dictionary<string, object>();

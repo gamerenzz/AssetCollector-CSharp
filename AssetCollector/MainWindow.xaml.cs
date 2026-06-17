@@ -11,9 +11,51 @@ using ClosedXML.Excel;
 using System.IO;
 using System.Drawing;
 using System.Timers;
+using System.Linq;
 
 namespace AssetCollector
 {
+    // 1. 全局策略类 (修复丢失)
+    public static class CurrentPolicy
+    {
+        public static bool CollectHardware = true;
+        public static bool CollectSoftware = true;
+        public static int ScanIntervalMinutes = 120;
+    }
+
+    // 2. 实时日志引擎 (修复丢失)
+    public static class DebugLogger
+    {
+        private static readonly object logLock = new object();
+        public static readonly List<string> Logs = new List<string>();
+        public static Action<string> OnLogAdded;
+
+        public static void Log(string level, string message, Exception ex = null)
+        {
+            string time = DateTime.Now.ToString("HH:mm:ss");
+            string line = $"[{time}] [{level}] {message}";
+            if (ex != null)
+            {
+                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
+            }
+
+            lock (logLock)
+            {
+                Logs.Add(line);
+                if (Logs.Count > 200) Logs.RemoveAt(0); 
+            }
+
+            OnLogAdded?.Invoke(line);
+        }
+    }
+
+    // 3. 结果实体类
+    public class ResultItem
+    {
+        public string Key { get; set; }
+        public string Value { get; set; }
+    }
+
     public partial class MainWindow : Window
     {
         private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) }; 
@@ -373,7 +415,7 @@ namespace AssetCollector
 
             try
             {
-                var payload = BuildPayload();
+                var payload = BuildPayloadInternal(currentResults, currentSoftwareResults);
                 await Task.Run(() => EnqueuePayload(payload));
                 await Task.Run(() => FlushQueueSequentialAsync());
 
@@ -390,6 +432,105 @@ namespace AssetCollector
             }
         }
 
+        // ========== UI 事件丢失恢复区域 (极其重要) ==========
+
+        // 【恢复】查看实时运行日志按钮事件
+        private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
+        {
+            if (logWindow != null && logWindow.IsLoaded)
+            {
+                logWindow.Activate();
+                return;
+            }
+
+            logWindow = new Window
+            {
+                Title = "客户端运行日志监视控制台",
+                Width = 650,
+                Height = 450,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                Background = System.Windows.Media.Brushes.Black,
+                FontFamily = new System.Windows.Media.FontFamily("Consolas")
+            };
+
+            Grid grid = new Grid { Margin = new Thickness(10) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            TextBlock header = new TextBlock { Text = "实时安全审计日志列表 (Consolas) | 选中可直接复制:", Foreground = System.Windows.Media.Brushes.LightGray, Margin = new Thickness(0, 0, 0, 8), FontSize = 12 };
+            Grid.SetRow(header, 0);
+
+            logTextBox = new TextBox
+            {
+                IsReadOnly = true,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Background = System.Windows.Media.Brushes.Black,
+                Foreground = System.Windows.Media.Brushes.Lime, 
+                BorderThickness = new Thickness(0),
+                FontSize = 12
+            };
+            Grid.SetRow(logTextBox, 1);
+
+            StringBuilder sb = new StringBuilder();
+            lock (DebugLogger.Logs)
+            {
+                foreach (var line in DebugLogger.Logs) sb.AppendLine(line);
+            }
+            logTextBox.Text = sb.ToString();
+            logTextBox.ScrollToEnd();
+
+            grid.Children.Add(header);
+            grid.Children.Add(logTextBox);
+            logWindow.Content = grid;
+
+            DebugLogger.OnLogAdded = (line) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (logTextBox != null && logWindow.IsLoaded)
+                    {
+                        logTextBox.AppendText(line + "\n");
+                        logTextBox.ScrollToEnd();
+                    }
+                });
+            };
+
+            logWindow.Show();
+        }
+
+        // 【恢复】帮助说明按钮事件
+        private void BtnHelp_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show(
+                "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
+                "开发人员：Tonekey2016\n\n" +
+                "【高级特性】：\n" +
+                "1. 本地离线缓存与抗并发排队机制。\n" +
+                "2. 开机静默扫描与自动对齐服务端策略下发机制。\n" +
+                "3. 实时网络监测与调试黑窗口日志监控。\n" +
+                "4. 防暴力终止、托盘驻留与动态防退出密码控制。",
+                "帮助说明", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        // 【辅助构造Payload】
+        private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
+        {
+            var payload = new Dictionary<string, object>();
+            payload["server_url"] = TxtServerUrl.Text.Trim();
+            payload["building"] = TxtBuilding.Text.Trim();
+            payload["floor"] = TxtFloor.Text.Trim();
+            payload["department"] = TxtDept.Text.Trim();
+            payload["type"] = TxtAssetType.Text.Trim();
+
+            foreach (var kv in customFields) payload[kv.Key] = kv.Value;
+            foreach (var item in hw) payload[item.Key] = item.Value;
+            if (sw != null && sw.Count > 0) payload["software_list"] = sw;
+            return payload;
+        }
+
+        // ========== 以下为托盘、密码和安全控制系统 ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();
@@ -708,7 +849,6 @@ namespace AssetCollector
             SaveConfig();
         }
 
-        // ========== 1. 扫描硬件动作 ==========
         private async void BtnScan_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -753,7 +893,6 @@ namespace AssetCollector
             return list;
         }
 
-        // ========== 2. 扫描软件动作 ==========
         private async void BtnScanSoftware_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -794,38 +933,9 @@ namespace AssetCollector
             Dispatcher.Invoke(() => { ProgBar.Value = percent; TxtStatus.Text = message; });
         }
 
-        // ========== 【核心新增】封装辅助的调试日志写入，供前台 status 和 调试黑窗口 实时跟踪 ==========
-        private void WriteDebugLog(string text, string level = "INFO")
-        {
-            string formatted = $"[{DateTime.Now:HH:mm:ss}] [{level}] {text}";
-            System.Diagnostics.Debug.WriteLine(formatted); 
-            UpdateStatusText(text); 
-        }
-
-        // 【新增】供外部调用的静默上报 Payload 构造
-        private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
-        {
-            var payload = new Dictionary<string, object>();
-            payload["server_url"] = TxtServerUrl.Text.Trim();
-            payload["building"] = TxtBuilding.Text.Trim();
-            payload["floor"] = TxtFloor.Text.Trim();
-            payload["department"] = TxtDept.Text.Trim();
-            payload["type"] = TxtAssetType.Text.Trim();
-
-            foreach (var kv in customFields) payload[kv.Key] = kv.Value;
-            foreach (var item in hw) payload[item.Key] = item.Value;
-            if (sw != null && sw.Count > 0) payload["software_list"] = sw;
-            return payload;
-        }
-
-        private Dictionary<string, object> BuildPayload()
-        {
-            return BuildPayloadInternal(currentResults, currentSoftwareResults);
-        }
-
         private async void BtnExport_Click(object sender, RoutedEventArgs e)
         {
-            var payload = BuildPayload();
+            var payload = BuildPayloadInternal(currentResults, currentSoftwareResults);
             string defaultName = $"{payload["building"]}_{payload["department"]}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
             SaveFileDialog saveFileDialog = new SaveFileDialog { Filter = "Excel 文件 (*.xlsx)|*.xlsx", FileName = defaultName, Title = "导出资产数据" };
 

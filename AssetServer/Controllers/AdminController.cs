@@ -9,7 +9,6 @@ using ClosedXML.Excel;
 using Newtonsoft.Json;
 using System.Security.Cryptography;
 using System.Text;
-// 【修正】导入服务端底层命名空间，解决 Group/Policy 无法识别报错
 using AssetServer;
 
 namespace AssetServer.Controllers
@@ -274,7 +273,8 @@ namespace AssetServer.Controllers
                 {
                     workbook.SaveAs(ms);
                     var fileBytes = ms.ToArray();
-                    return File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"全网终端资产台账_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx");
+                    // 【关键修复】使用 base.File 来彻底排除 System.IO.File 类的命名冲突！
+                    return base.File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"全网终端资产台账_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx");
                 }
             }
         }

@@ -28,7 +28,7 @@ jobs:
         name: AssetCollector-Client-Windows
         path: AssetCollector/bin/Release/net47/
 
-  # 任务二：编译服务端 (ASP.NET Core .NET 8.0 独立部署版，免装运行库)
+  # 任务二：编译服务端 (ASP.NET Core .NET 8.0 独立部署版，免装运行库，支持纯内网)
   build-server:
     runs-on: windows-latest
     steps:
@@ -40,10 +40,17 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
+    - name: Create wwwroot Directory
+      run: mkdir -p AssetServer/wwwroot
+
+    # 【核心新增】利用 GitHub 极速外网，在云端将网页所需的库下载到本地，实现纯内网离线秒开
+    - name: Download Offline Web Assets (Vue & Tailwind)
+      shell: bash
+      run: |
+        curl -L https://unpkg.com/vue@3/dist/vue.global.js -o AssetServer/wwwroot/vue.global.js
+        curl -L https://cdn.tailwindcss.com -o AssetServer/wwwroot/tailwind.js
+
     - name: Publish Server (Self-Contained)
-      # 【关键升级】
-      # 增加了 -r win-x64（指定Windows 64位系统）
-      # 增加了 --self-contained true（把.NET8运行库直接打包进输出文件夹）
       run: dotnet publish AssetServer/AssetServer.csproj -c Release -r win-x64 --self-contained true -o publish/AssetServer
 
     - name: Upload Server Files

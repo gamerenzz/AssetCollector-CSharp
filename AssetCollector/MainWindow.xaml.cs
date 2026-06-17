@@ -15,32 +15,7 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 【核心新增】实时安全调试日志引擎，最高200条缓存，支持 UI 动态回显
-    public static class DebugLogger
-    {
-        private static readonly object logLock = new object();
-        public static readonly List<string> Logs = new List<string>();
-        public static Action<string> OnLogAdded;
-
-        public static void Log(string level, string message, Exception ex = null)
-        {
-            string time = DateTime.Now.ToString("HH:mm:ss");
-            string line = $"[{time}] [{level}] {message}";
-            if (ex != null)
-            {
-                line += $"\n   [异常详情]: {ex.Message}\n   [调用位置]: {ex.StackTrace}";
-            }
-
-            lock (logLock)
-            {
-                Logs.Add(line);
-                if (Logs.Count > 200) Logs.RemoveAt(0); // 仅保留最新200条
-            }
-
-            OnLogAdded?.Invoke(line);
-        }
-    }
-
+    // 本地全局策略静态内存，用于遵从服务器规则
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
@@ -50,7 +25,7 @@ namespace AssetCollector
 
     public partial class MainWindow : Window
     {
-        private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(8) }; // 略微缩短超时方便排错
+        private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) }; 
         private List<ResultItem> currentResults = new List<ResultItem>();
         private List<SoftwareItem> currentSoftwareResults = new List<SoftwareItem>();
         
@@ -68,7 +43,7 @@ namespace AssetCollector
         private static readonly object syncLock = new object();
         private bool isSyncing = false;
 
-        private Window logWindow; // 日志框引用
+        private Window logWindow; 
         private TextBox logTextBox;
 
         public MainWindow(bool startMinimized)
@@ -235,7 +210,6 @@ namespace AssetCollector
             });
         }
 
-        // 同步策略增加底层日志跟踪
         private async Task SyncPolicyFromServerAsync()
         {
             try
@@ -257,7 +231,7 @@ namespace AssetCollector
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 string url = TxtServerUrl.Text.Trim().TrimEnd('/') + "/api/heartbeat";
 
-                DebugLogger.Log("INFO", $"正在向服务器对齐最新扫描上报策略。API: {url}");
+                DebugLogger.Log("INFO", $"正在向服务器对齐最新上报策略。API: {url}");
                 var response = await httpClient.PostAsync(url, content);
                 if (response.IsSuccessStatusCode)
                 {
@@ -300,7 +274,7 @@ namespace AssetCollector
                 }
                 else
                 {
-                    DebugLogger.Log("WARN", $"心跳策略对齐失败：服务器返回了错误的状态码 [{(int)response.StatusCode} {response.ReasonPhrase}]。可能是设备在数据库里还未注册，请先执行一次手动上传注册。");
+                    DebugLogger.Log("WARN", $"心跳策略对齐失败：服务器返回了错误的状态码 [{(int)response.StatusCode} {response.ReasonPhrase}]。");
                 }
             }
             catch (Exception ex)
@@ -365,7 +339,6 @@ namespace AssetCollector
             }
         }
 
-        // 底层网络吞吐日志
         private async Task<bool> UploadSinglePayloadAsync(string baseUrl, Dictionary<string, object> payload)
         {
             string url = baseUrl.Trim().TrimEnd('/') + "/api/upload";
@@ -437,76 +410,6 @@ namespace AssetCollector
             }
         }
 
-        // ========== 【新增】运行日志 WPF 窗口控制系统 ==========
-        private void BtnViewLogs_Click(object sender, RoutedEventArgs e)
-        {
-            if (logWindow != null && logWindow.IsLoaded)
-            {
-                logWindow.Activate();
-                return;
-            }
-
-            // 动态构建一个带自动滚动、复制的纯日志监控窗口
-            logWindow = new Window
-            {
-                Title = "客户端运行日志监视控制台",
-                Width = 650,
-                Height = 450,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                Background = System.Windows.Media.Brushes.Black,
-                FontFamily = new System.Windows.Media.FontFamily("Consolas")
-            };
-
-            Grid grid = new Grid { Margin = new Thickness(10) };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            TextBlock header = new TextBlock { Text = "实时安全审计日志列表 (Consolas) | 选中可直接复制:", Foreground = System.Windows.Media.Brushes.LightGray, Margin = new Thickness(0, 0, 0, 8), FontSize = 12 };
-            Grid.SetRow(header, 0);
-
-            logTextBox = new TextBox
-            {
-                IsReadOnly = true,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Background = System.Windows.Media.Brushes.Black,
-                Foreground = System.Windows.Media.Brushes.Lime, // 经典的黑底绿字黑客帝国控制台风格
-                BorderThickness = new Thickness(0),
-                FontSize = 12
-            };
-            Grid.SetRow(logTextBox, 1);
-
-            // 载入已有历史日志
-            StringBuilder sb = new StringBuilder();
-            lock (DebugLogger.Logs)
-            {
-                foreach (var line in DebugLogger.Logs) sb.AppendLine(line);
-            }
-            logTextBox.Text = sb.ToString();
-            logTextBox.ScrollToEnd();
-
-            grid.Children.Add(header);
-            grid.Children.Add(logTextBox);
-            logWindow.Content = grid;
-
-            // 绑定新日志事件回显到界面
-            DebugLogger.OnLogAdded = (line) =>
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    if (logTextBox != null && logWindow.IsLoaded)
-                    {
-                        logTextBox.AppendText(line + "\n");
-                        logTextBox.ScrollToEnd();
-                    }
-                });
-            };
-
-            logWindow.Show();
-        }
-
-        // ========== 以下为托盘、密码和安全控制系统 ==========
         private void InitializeTrayIcon()
         {
             trayIcon = new System.Windows.Forms.NotifyIcon();
@@ -593,6 +496,70 @@ namespace AssetCollector
         {
             PasswordOverlay.Visibility = Visibility.Collapsed;
             TxtExitPassword.Clear();
+        }
+
+        // 修改客户端安全退出密码
+        private void BtnChangeExitPassword_Click(object sender, RoutedEventArgs e)
+        {
+            Window dialog = new Window { Title = "修改客户端安全退出密码", Width = 320, Height = 210, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this, ResizeMode = ResizeMode.NoResize, Background = System.Windows.Media.Brushes.White, FontFamily = this.FontFamily };
+            Grid grid = new Grid { Margin = new Thickness(15) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            StackPanel sp1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            sp1.Children.Add(new Label { Content = "旧密码:", Width = 70 });
+            PasswordBox txtOld = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp1.Children.Add(txtOld);
+            Grid.SetRow(sp1, 0);
+
+            StackPanel sp2 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            sp2.Children.Add(new Label { Content = "新密码:", Width = 70 });
+            PasswordBox txtNew = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp2.Children.Add(txtNew);
+            Grid.SetRow(sp2, 1);
+
+            StackPanel sp3 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 15) };
+            sp3.Children.Add(new Label { Content = "重复新密码:", Width = 70 });
+            PasswordBox txtConfirm = new PasswordBox { Width = 180, VerticalContentAlignment = VerticalAlignment.Center };
+            sp3.Children.Add(txtConfirm);
+            Grid.SetRow(sp3, 2);
+
+            StackPanel sp4 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            Button btnOk = new Button { Content = "确认修改", Width = 80, Height = 25, IsDefault = true, Margin = new Thickness(0, 0, 10, 0) };
+            Button btnCancel = new Button { Content = "取消", Width = 70, Height = 25, IsCancel = true };
+            sp4.Children.Add(btnOk); sp4.Children.Add(btnCancel);
+            Grid.SetRow(sp4, 3);
+
+            grid.Children.Add(sp1); grid.Children.Add(sp2); grid.Children.Add(sp3); grid.Children.Add(sp4);
+            dialog.Content = grid;
+
+            btnOk.Click += (o, a) =>
+            {
+                if (txtOld.Password != ExitPassword)
+                {
+                    MessageBox.Show("旧密码验证不正确！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (string.IsNullOrEmpty(txtNew.Password))
+                {
+                    MessageBox.Show("新密码不能为空！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (txtNew.Password != txtConfirm.Password)
+                {
+                    MessageBox.Show("两次输入的新密码不一致！", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                ExitPassword = txtNew.Password; 
+                SaveConfig(); 
+                MessageBox.Show("客户端安全退出密码修改成功！并已安全保存在本地。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                dialog.DialogResult = true;
+            };
+
+            dialog.ShowDialog();
         }
 
         private void CheckAutoStartStatus()
@@ -762,6 +729,7 @@ namespace AssetCollector
             SaveConfig();
         }
 
+        // ========== 1. 扫描硬件动作 ==========
         private async void BtnScan_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -806,6 +774,7 @@ namespace AssetCollector
             return list;
         }
 
+        // ========== 2. 扫描软件动作 ==========
         private async void BtnScanSoftware_Click(object sender, RoutedEventArgs e)
         {
             LockUI(true);
@@ -825,6 +794,55 @@ namespace AssetCollector
 
             await Task.Delay(2000);
             ProgBar.Visibility = Visibility.Hidden;
+        }
+
+        private void LockUI(bool isLocked)
+        {
+            if (isLocked)
+            {
+                BtnScan.IsEnabled = false; BtnScanSoftware.IsEnabled = false;
+                BtnUpload.IsEnabled = false; BtnExport.IsEnabled = false;
+            }
+            else
+            {
+                BtnScan.IsEnabled = true; BtnScanSoftware.IsEnabled = true;
+                BtnUpload.IsEnabled = true; BtnExport.IsEnabled = true;
+            }
+        }
+
+        private void UpdateProgress(int percent, string message)
+        {
+            Dispatcher.Invoke(() => { ProgBar.Value = percent; TxtStatus.Text = message; });
+        }
+
+        // ========== 【核心新增】封装辅助的调试日志写入，供前台 status 和 调试黑窗口 实时跟踪 ==========
+        private void WriteDebugLog(string text, string level = "INFO")
+        {
+            string formatted = $"[{DateTime.Now:HH:mm:ss}] [{level}] {text}";
+            System.Diagnostics.Debug.WriteLine(formatted); // 写入 VS 调试输出
+            
+            // 实时将重要错误同步呈现在主界面的状态条上，方便管理员排查防火墙/网络情况
+            UpdateStatusText(text); 
+        }
+
+        // ========== 数据打包、上传、导出 ==========
+        private Dictionary<string, object> BuildPayload()
+        {
+            var payload = new Dictionary<string, object>();
+            payload["server_url"] = TxtServerUrl.Text.Trim();
+            payload["building"] = TxtBuilding.Text.Trim();
+            payload["floor"] = TxtFloor.Text.Trim();
+            payload["department"] = TxtDept.Text.Trim();
+            payload["type"] = TxtAssetType.Text.Trim();
+
+            foreach (var kv in customFields) payload[kv.Key] = kv.Value;
+            foreach (var item in currentResults) payload[item.Key] = item.Value;
+            
+            if (currentSoftwareResults != null && currentSoftwareResults.Count > 0)
+            {
+                payload["software_list"] = currentSoftwareResults;
+            }
+            return payload;
         }
 
         private async void BtnExport_Click(object sender, RoutedEventArgs e)
@@ -895,21 +913,9 @@ namespace AssetCollector
                 finally { BtnExport.Content = "导出数据 (Excel)"; BtnExport.IsEnabled = true; }
             }
         }
-
-        private void BtnHelp_Click(object sender, RoutedEventArgs e)
-        {
-            MessageBox.Show(
-                "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
-                "开发人员：Tonekey2016\n\n" +
-                "【第二阶段升级】核心传输特性：\n" +
-                "1. 本地离线缓存：网络不通时，数据混淆保存在 exe 旁的 queue.dat 中，绝不丢失。\n" +
-                "2. 开机静默扫描：当设置了位置信息，开机自启时自动静默进行硬件扫描并排队入库，对用户无干扰。\n" +
-                "3. 依次排队上报：一旦检测到网络通畅，本地积压的包会以 1.5 秒的间隔依次发送，防止击穿服务器。\n" +
-                "4. 异常防御：服务端断网、宕机、客户端断电，软件均能完美包容并自动在下次启动时恢复同步。",
-                "帮助说明 / 传输与离线缓存控制", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
     }
 
+    // 【新增重要修漏】将 ResultItem 严谨放置在命名空间底层
     public class ResultItem
     {
         public string Key { get; set; }

@@ -15,12 +15,13 @@ using System.Linq;
 
 namespace AssetCollector
 {
-    // 全局策略类 (保留在这个文件中)
+    // 【高阶重构】全局策略引擎持久化内存
     public static class CurrentPolicy
     {
         public static bool CollectHardware = true;
         public static bool CollectSoftware = true;
-        public static int ScanIntervalMinutes = 120;
+        public static int LocalPolicyVersion = 0; // 本地记忆的最后执行版本
+        public static DateTime LastScanTime = DateTime.MinValue; // 本地记忆的最后扫描时间
     }
 
     public partial class MainWindow : Window
@@ -69,22 +70,15 @@ namespace AssetCollector
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             DebugLogger.Log("INFO", "客户端主界面渲染加载完成。");
-            await Task.Run(() => SyncPolicyFromServerAsync());
-
-            if (!string.IsNullOrWhiteSpace(TxtBuilding.Text) && 
-                !string.IsNullOrWhiteSpace(TxtFloor.Text) && 
-                !string.IsNullOrWhiteSpace(TxtDept.Text))
+            // 开机启动时如果发现有积压历史数据，先尝试清空
+            if (LoadQueue().Count > 0)
             {
-                var queue = LoadQueue();
-                if (CurrentPolicy.CollectHardware || CurrentPolicy.CollectSoftware || queue.Count > 0)
-                {
-                    UpdateStatusText("正在执行自动上报任务...");
-                    DebugLogger.Log("INFO", "检测到位置信息齐备，开始触发启动时后台自动静默采集任务。");
-                    await Task.Run(() => PerformSilentScanAndEnqueue());
-                }
+                UpdateStatusText("发现本地离线积压数据，尝试上报...");
+                await Task.Run(() => FlushQueueSequentialAsync());
             }
         }
 
+        // 智能静默扫描（根据策略引擎自动取舍硬件与软件）
         private void PerformSilentScanAndEnqueue()
         {
             try
@@ -94,22 +88,14 @@ namespace AssetCollector
 
                 if (CurrentPolicy.CollectHardware)
                 {
-                    DebugLogger.Log("INFO", "策略控制：执行后台静默硬件扫描...");
+                    DebugLogger.Log("INFO", "策略执行：后台深度扫描硬件配置...");
                     hwList = PerformScanHardware();
-                }
-                else
-                {
-                    DebugLogger.Log("WARN", "策略控制：服务器要求禁止扫描硬件，已跳过。");
                 }
 
                 if (CurrentPolicy.CollectSoftware)
                 {
-                    DebugLogger.Log("INFO", "策略控制：执行后台静默软件明细解析...");
+                    DebugLogger.Log("INFO", "策略执行：后台深度检索已安装软件名录...");
                     swList = HardwareCollector.GetInstalledSoftwareList();
-                }
-                else
-                {
-                    DebugLogger.Log("WARN", "策略控制：服务器要求禁止扫描软件清单，已跳过。");
                 }
 
                 var payload = BuildPayloadInternal(hwList, swList);
@@ -139,10 +125,7 @@ namespace AssetCollector
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    DebugLogger.Log("ERROR", "从本地 queue.dat 加载离线缓存失败，可能是缓存损坏。", ex);
-                }
+                catch { }
                 return new List<Dictionary<string, object>>();
             }
         }
@@ -157,25 +140,16 @@ namespace AssetCollector
                     string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
                     File.WriteAllText(queueFilePath, base64, Encoding.UTF8);
                 }
-                catch (Exception ex)
-                {
-                    DebugLogger.Log("ERROR", "写本地离线 queue.dat 缓存失败！", ex);
-                }
+                catch { }
             }
         }
 
         private void EnqueuePayload(Dictionary<string, object> payload)
         {
             var queue = LoadQueue();
-            if (queue.Count > 20)
-            {
-                DebugLogger.Log("WARN", "离线缓存队列超过 20 条，抛弃最老的一条。");
-                queue.RemoveAt(0);
-            }
-
+            if (queue.Count > 20) queue.RemoveAt(0);
             queue.Add(payload);
             SaveQueue(queue);
-            DebugLogger.Log("INFO", "成功将 1 条最新扫描数据安全缓存在本地队列中。");
             UpdateStatusText($"本地已缓存 1 条数据");
         }
 
@@ -184,22 +158,22 @@ namespace AssetCollector
             syncTimer = new Timer(120000); 
             syncTimer.Elapsed += async (s, e) =>
             {
-                DebugLogger.Log("INFO", "=== 后台定时重传轮询触发 ===");
-                await SyncPolicyFromServerAsync(); 
+                await SyncPolicyAndExecuteScanAsync(); 
                 await FlushQueueSequentialAsync(); 
             };
             syncTimer.AutoReset = true;
             syncTimer.Start();
-            DebugLogger.Log("INFO", "定时同步器已加载 (Interval: 120秒)。");
+            DebugLogger.Log("INFO", "智能心跳策略引擎已加载。");
 
             Task.Run(async () =>
             {
-                await SyncPolicyFromServerAsync();
+                await SyncPolicyAndExecuteScanAsync();
                 await FlushQueueSequentialAsync();
             });
         }
 
-        private async Task SyncPolicyFromServerAsync()
+        // ========== 【重磅核心】策略对齐与条件唤醒引擎 ==========
+        private async Task SyncPolicyAndExecuteScanAsync()
         {
             try
             {
@@ -209,16 +183,10 @@ namespace AssetCollector
                 if (primaryMac.Contains("|")) primaryMac = primaryMac.Split('|')[0].Trim();
                 if (primaryMac.Contains(":")) primaryMac = primaryMac.Split(':')[1].Trim();
 
-                if (string.IsNullOrEmpty(primaryMac) || primaryMac == "Unknown")
-                {
-                    DebugLogger.Log("WARN", "无法获取主网卡 MAC 地址，安全对齐机制挂起。");
-                    return;
-                }
+                if (string.IsNullOrEmpty(primaryMac) || primaryMac == "Unknown") return;
 
-                // 【核心修复】安全跨线程读取 UI
                 string serverUrl = "";
                 Dispatcher.Invoke(() => { serverUrl = TxtServerUrl.Text.Trim().TrimEnd('/'); });
-
                 if (string.IsNullOrEmpty(serverUrl)) return;
 
                 var reqObj = new { MacAddress = primaryMac };
@@ -226,7 +194,6 @@ namespace AssetCollector
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 string url = serverUrl + "/api/heartbeat";
 
-                DebugLogger.Log("INFO", $"正在向服务器对齐最新上报策略。API: {url}");
                 var response = await httpClient.PostAsync(url, content);
                 if (response.IsSuccessStatusCode)
                 {
@@ -237,44 +204,57 @@ namespace AssetCollector
                         CurrentPolicy.CollectHardware = Convert.ToBoolean(policy["collect_hardware"]);
                         CurrentPolicy.CollectSoftware = Convert.ToBoolean(policy["collect_software"]);
                         int intervalMinutes = Convert.ToInt32(policy["scan_interval_minutes"]);
+                        int serverVersion = Convert.ToInt32(policy["policy_version"]);
 
-                        DebugLogger.Log("INFO", $"策略对齐成功：收集硬件={CurrentPolicy.CollectHardware} | 收集软件={CurrentPolicy.CollectSoftware} | 周期={intervalMinutes}分钟");
+                        bool shouldScanNow = false;
 
-                        if (intervalMinutes == 0)
+                        // 规则 A：服务器更新了规则版本（例如：管理员新建分组或强制重扫）
+                        // 完美实现“断网后开机如果错过了版本，自动补发一次”
+                        if (serverVersion > CurrentPolicy.LocalPolicyVersion)
                         {
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (syncTimer.Interval != 300000)
-                                {
-                                    syncTimer.Interval = 300000;
-                                    DebugLogger.Log("INFO", "策略控制：已切入[单次上报静默休眠]状态，主定时器降为 5分钟 缓慢心跳。");
-                                }
-                            });
+                            DebugLogger.Log("INFO", $"⚡ 侦测到服务器策略升级 (v{CurrentPolicy.LocalPolicyVersion} -> v{serverVersion})。立即唤醒深度扫描！");
+                            shouldScanNow = true;
+                            CurrentPolicy.LocalPolicyVersion = serverVersion;
                         }
-                        else
+                        // 规则 B：定时采集模式（如果不是设为 0 的单次休眠模式，且时间到了）
+                        else if (intervalMinutes > 0)
                         {
-                            double intervalMs = intervalMinutes * 60.0 * 1000.0;
-                            if (intervalMs < 120000) intervalMs = 120000;
-
-                            Dispatcher.Invoke(() =>
+                            var timeSinceLast = DateTime.Now - CurrentPolicy.LastScanTime;
+                            if (timeSinceLast.TotalMinutes >= intervalMinutes)
                             {
-                                if (Math.Abs(syncTimer.Interval - intervalMs) > 100)
-                                {
-                                    syncTimer.Interval = intervalMs;
-                                    DebugLogger.Log("INFO", $"策略控制：策略上报周期已动态变更为 {intervalMinutes} 分钟一次。");
-                                }
-                            });
+                                DebugLogger.Log("INFO", $"⏱️ 定时上报周期 ({intervalMinutes} 分钟) 已到期。立即唤醒深度扫描！");
+                                shouldScanNow = true;
+                            }
                         }
+
+                        // 如果满足以上任何唤醒规则，则触发静默扫描，并记录执行时间
+                        if (shouldScanNow)
+                        {
+                            CurrentPolicy.LastScanTime = DateTime.Now;
+                            Dispatcher.Invoke(() => SaveConfig()); // 将新版本和时间刻入本地 config.json
+                            _ = Task.Run(() => PerformSilentScanAndEnqueue()); // 启动线程独立运行扫描，不阻塞心跳
+                        }
+
+                        // 智能调频：如果配置为单次上报(0)，平时进入低耗能的 5 分钟轻心跳；否则每 2 分钟心跳并检查周期
+                        double heartbeatMs = intervalMinutes == 0 ? 300000 : 120000;
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (Math.Abs(syncTimer.Interval - heartbeatMs) > 100)
+                            {
+                                syncTimer.Interval = heartbeatMs;
+                                DebugLogger.Log("INFO", $"❤️ 心跳频率自适应调整为 {heartbeatMs/1000} 秒一跳。");
+                            }
+                        });
                     }
                 }
                 else
                 {
-                    DebugLogger.Log("WARN", $"心跳策略对齐失败：服务器返回了错误的状态码 [{(int)response.StatusCode} {response.ReasonPhrase}]。可能是设备在数据库里还未注册。");
+                    DebugLogger.Log("WARN", $"心跳握手被拒：HTTP {(int)response.StatusCode}。设备可能未注册（请点击一次手动上传完成建档）。");
                 }
             }
             catch (Exception ex)
             {
-                DebugLogger.Log("ERROR", "网络异常：向服务器拉取策略规则失败。请检查服务器 IP 端口及防火墙策略！", ex);
+                DebugLogger.Log("ERROR", "网络异常：心跳寻址失败。", ex);
             } 
         }
 
@@ -296,9 +276,7 @@ namespace AssetCollector
                 }
 
                 UpdateStatusText($"正在后台同步队列（剩余：{queue.Count} 个待上报）...");
-                DebugLogger.Log("INFO", $"开始按序清理并发送积压队列中的 {queue.Count} 个包...");
 
-                // 【核心修复】安全跨线程读取
                 string fallbackUrl = "";
                 Dispatcher.Invoke(() => { fallbackUrl = TxtServerUrl.Text.Trim(); });
 
@@ -313,12 +291,12 @@ namespace AssetCollector
                     {
                         queue.RemoveAt(0);
                         SaveQueue(queue);
-                        DebugLogger.Log("INFO", "上报：1个历史缓存包成功送达服务器并已安全销毁。");
+                        DebugLogger.Log("INFO", "✅ 上报成功：1个离线数据包已成功送达数据库并销毁。");
                         UpdateStatusText($"同步成功 | 剩余缓存: {queue.Count} 个");
                     }
                     else
                     {
-                        UpdateStatusText($"服务器不在线，队列已妥善暂存 | 剩余: {queue.Count} 个");
+                        UpdateStatusText($"服务器不在线，队列已暂存 | 剩余: {queue.Count} 个");
                         break;
                     }
 
@@ -345,25 +323,21 @@ namespace AssetCollector
             {
                 string json = JsonConvert.SerializeObject(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                DebugLogger.Log("INFO", $"发送数据包至网关: {url}");
                 var response = await httpClient.PostAsync(url, content);
                 
                 if (response.IsSuccessStatusCode)
                 {
-                    DebugLogger.Log("INFO", "数据包被网关成功接收，返回 200 OK。");
                     return true;
                 }
                 else
                 {
                     string body = await response.Content.ReadAsStringAsync();
-                    DebugLogger.Log("WARN", $"数据包发送失败。网关状态码: [{(int)response.StatusCode}]。服务器详情: {body}");
+                    DebugLogger.Log("WARN", $"网关阻拦：[{(int)response.StatusCode}] {body}");
                     return false;
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                DebugLogger.Log("ERROR", $"网络故障：尝试连接服务器失败！API: {url}", ex);
                 return false;
             }
         }
@@ -373,14 +347,8 @@ namespace AssetCollector
             Dispatcher.Invoke(() =>
             {
                 var queue = LoadQueue();
-                if (queue.Count > 0)
-                {
-                    TxtStatus.Text = $"{text} [离线积压: {queue.Count}个]";
-                }
-                else
-                {
-                    TxtStatus.Text = text;
-                }
+                if (queue.Count > 0) TxtStatus.Text = $"{text} [离线积压: {queue.Count}个]";
+                else TxtStatus.Text = text;
             });
         }
 
@@ -479,15 +447,13 @@ namespace AssetCollector
             MessageBox.Show(
                 "终端资产管理平台-客户端 (C# .NET 4.7) v2.0.0\n\n" +
                 "开发人员：Tonekey2016\n\n" +
-                "【高级特性】：\n" +
-                "1. 本地离线缓存与抗并发排队机制。\n" +
-                "2. 开机静默扫描与自动对齐服务端策略下发机制。\n" +
-                "3. 实时网络监测与调试黑窗口日志监控。\n" +
-                "4. 防暴力终止、托盘驻留与动态防退出密码控制。",
+                "【终极策略引擎机制说明】：\n" +
+                "1. 本系统支持智能策略版本对齐技术。如果你设置0分钟单次上报，扫描一次后客户端会永远彻底休眠。\n" +
+                "2. 只要网页端下发了强制扫描，哪怕断网关机10天，开机重连后也会立刻触发一次深度收集。\n" +
+                "3. 点击左侧 [修改退出密码] 可完全脱离硬编码，安全存储自定义退出凭证。",
                 "帮助说明", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        // 【核心修复】安全跨线程构造 Payload
         private Dictionary<string, object> BuildPayloadInternal(List<ResultItem> hw, List<SoftwareItem> sw)
         {
             var payload = new Dictionary<string, object>();
@@ -718,7 +684,11 @@ namespace AssetCollector
                         if (cfg.ContainsKey("window_height")) this.Height = Convert.ToDouble(cfg["window_height"]);
                         if (cfg.ContainsKey("window_top")) this.Top = Convert.ToDouble(cfg["window_top"]);
                         if (cfg.ContainsKey("window_left")) this.Left = Convert.ToDouble(cfg["window_left"]);
+                        
+                        // 【核心新增加载】从配置载入版本和最后扫描时间记忆
                         if (cfg.ContainsKey("exit_password")) ExitPassword = cfg["exit_password"].ToString();
+                        if (cfg.ContainsKey("local_policy_version")) CurrentPolicy.LocalPolicyVersion = Convert.ToInt32(cfg["local_policy_version"]);
+                        if (cfg.ContainsKey("last_scan_time")) CurrentPolicy.LastScanTime = Convert.ToDateTime(cfg["last_scan_time"]);
 
                         if (cfg.ContainsKey("custom_fields"))
                         {
@@ -751,6 +721,8 @@ namespace AssetCollector
                     { "window_top", this.Top },
                     { "window_left", this.Left },
                     { "exit_password", ExitPassword }, 
+                    { "local_policy_version", CurrentPolicy.LocalPolicyVersion }, 
+                    { "last_scan_time", CurrentPolicy.LastScanTime.ToString("o") }, 
                     { "custom_fields", JsonConvert.SerializeObject(customFields) }
                 };
                 File.WriteAllText(configFilePath, JsonConvert.SerializeObject(cfg, Formatting.Indented), Encoding.UTF8);

@@ -11,7 +11,13 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AssetDbContext>(options =>
     options.UseSqlite(connectionString));
 
-builder.Services.AddControllers();
+// 【核心修改】配置控制器，并强制其保留 C# 原生的 PascalCase (大写开头) 属性大小写，完美契合前端页面！
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = null; // 设为 null 即代表不改变大小写
+    });
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -78,14 +84,14 @@ app.UseStaticFiles();
 app.UseCors("AllowAll");
 app.UseAuthorization();
 
-// 【核心修改一】网页端：访问根目录 / 时，自动优雅重定向到 index.html
+// 网页端：自动重定向到 index.html
 app.MapGet("/", async context =>
 {
     context.Response.Redirect("/index.html");
     await Task.CompletedTask;
 });
 
-// 【核心修改二】API 端：将原有的健康检查移动到 /api/health，绝不阻挡网页访问
+// API 端健康检查
 app.MapGet("/api/health", () => new { status = "Online", message = "终端资产管理平台 WebAPI 服务端正常运行中" });
 
 app.MapControllers();

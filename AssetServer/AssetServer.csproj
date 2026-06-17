@@ -11,7 +11,8 @@
     <!-- EF Core 核心与 SQLite 支持 -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2">
-      <PrivateAssets>all</ReleaseAssets>
+      <!-- 修正：将 </ReleaseAssets> 改正为了 </PrivateAssets> -->
+      <PrivateAssets>all</PrivateAssets> 
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
